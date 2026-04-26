@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Math-a-paloosa!</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --space:#060818;--yellow:#FFD93D;--orange:#FF6B35;--pink:#FF3CAC;
+  --cyan:#4ECDC4;--green:#6BCB77;--purple:#9B5DE5;--red:#FF4466;--white:#FFF8F0;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--space);font-family:'Nunito',sans-serif;color:var(--white);}
+button{font-family:'Nunito',sans-serif;}
+
+/* SCREENS */
+.screen{display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;}
+.screen.active{display:flex;}
+
+/* STARFIELD */
+#starfield{position:fixed;inset:0;pointer-events:none;z-index:0;}
+.star{position:absolute;border-radius:50%;background:white;animation:twinkle linear infinite;}
+@keyframes twinkle{0%,100%{opacity:.12}50%{opacity:1}}
+
+/* ===== TITLE ===== */
+#screen-title{z-index:10;text-align:center;gap:12px;padding:16px;}
+.title-glow{
+  font-family:'Fredoka One',cursive;
+  font-size:clamp(2.4rem,9vw,5.5rem);
+  background:linear-gradient(135deg,#FFD93D,#FF6B35,#FF3CAC,#9B5DE5);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  filter:drop-shadow(0 0 28px rgba(255,107,53,.6));
+  animation:tpulse 3s ease-in-out infinite;line-height:1.1;
+}
+@keyframes tpulse{0%,100%{filter:drop-shadow(0 0 18px rgba(255,107,53,.4))}50%{filter:drop-shadow(0 0 44px rgba(255,61,172,.7))}}
+.title-sub{font-size:.85rem;font-weight:800;letter-spacing:4px;color:var(--cyan);text-transform:uppercase;}
+.hero-row{display:flex;gap:10px;justify-content:center;}
+.hcard{background:rgba(255,255,255,.07);border:2px solid rgba(255,255,255,.15);border-radius:16px;padding:12px 14px;text-align:center;cursor:pointer;transition:all .2s;min-width:85px;}
+.hcard:active{transform:scale(.95);}
+.hcard.zap:hover,.hcard.zap:focus{border-color:var(--cyan);box-shadow:0 0 22px rgba(78,205,196,.5);}
+.hcard.kaze:hover,.hcard.kaze:focus{border-color:var(--purple);box-shadow:0 0 22px rgba(155,93,229,.5);}
+.hcard.dino:hover,.hcard.dino:focus{border-color:var(--green);box-shadow:0 0 22px rgba(107,203,119,.5);}
+.hcard .hem{font-size:2.2rem;display:block;animation:float 2.5s ease-in-out infinite;}
+.hcard:nth-child(2) .hem{animation-delay:.4s;}.hcard:nth-child(3) .hem{animation-delay:.8s;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+.hcard .hname{font-family:'Fredoka One',cursive;font-size:1rem;margin-top:3px;}
+.hcard.zap .hname{color:var(--cyan)}.hcard.kaze .hname{color:var(--purple)}.hcard.dino .hname{color:var(--green)}
+.hcard .hpow{font-size:.62rem;font-weight:700;color:rgba(255,255,255,.5);margin-top:2px;line-height:1.3;max-width:82px;}
+.title-btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+.btn-primary{background:linear-gradient(135deg,var(--yellow),var(--orange));color:#1a0a00;border:none;font-family:'Fredoka One',cursive;font-size:1.3rem;padding:11px 36px;border-radius:50px;cursor:pointer;box-shadow:0 6px 0 #a03300;transition:all .1s;}
+.btn-primary:hover{transform:translateY(2px);box-shadow:0 4px 0 #a03300;}
+.btn-primary:active{transform:translateY(5px);box-shadow:0 1px 0 #a03300;}
+.btn-secondary{background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.25);color:var(--white);font-family:'Fredoka One',cursive;font-size:1.1rem;padding:10px 28px;border-radius:50px;cursor:pointer;transition:all .15s;}
+.btn-secondary:hover{background:rgba(255,255,255,.15);border-color:var(--cyan);}
+.pick-label{font-size:.8rem;font-weight:800;color:rgba(255,255,255,.4);letter-spacing:1px;}
+.selected-char-display{font-family:'Fredoka One',cursive;font-size:1rem;padding:6px 18px;border-radius:30px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);}
+
+/* ===== PLANET MAP ===== */
+#screen-map{z-index:10;padding:0;}
+.map-header{width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:rgba(0,0,0,.5);backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;}
+.map-title{font-family:'Fredoka One',cursive;font-size:1.3rem;color:var(--yellow);}
+.map-scroll{flex:1;width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;}
+.map-inner{display:flex;align-items:center;padding:20px 24px;gap:0;min-width:max-content;height:100%;position:relative;}
+.map-path-line{position:absolute;top:50%;height:4px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.3) 0,rgba(255,255,255,.3) 10px,transparent 10px,transparent 20px);transform:translateY(-50%);left:60px;pointer-events:none;}
+.map-stop{display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;z-index:2;cursor:pointer;padding:8px 20px;border-radius:16px;transition:all .2s;min-width:90px;}
+.map-stop.unlocked:hover{background:rgba(255,255,255,.08);transform:translateY(-4px);}
+.map-stop.locked{opacity:.35;cursor:not-allowed;}
+.map-stop .mp-emoji{font-size:2.8rem;animation:pfloat 3s ease-in-out infinite;}
+.map-stop:nth-child(odd) .mp-emoji{animation-delay:.5s;}
+@keyframes pfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.map-stop .mp-name{font-family:'Fredoka One',cursive;font-size:.85rem;text-align:center;white-space:nowrap;}
+.map-stop.unlocked .mp-name{color:var(--white);}
+.map-stop.completed .mp-name{color:var(--green);}
+.map-stop .mp-badge{font-size:.6rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;border-radius:10px;}
+.map-stop.completed .mp-badge{background:rgba(107,203,119,.2);color:var(--green);}
+.map-stop.current .mp-badge{background:rgba(255,217,61,.2);color:var(--yellow);}
+.map-stop.locked .mp-badge{background:rgba(255,255,255,.1);color:rgba(255,255,255,.4);}
+.map-stop.current{animation:curPulse 2s ease-in-out infinite;}
+@keyframes curPulse{0%,100%{box-shadow:0 0 0 rgba(255,217,61,0)}50%{box-shadow:0 0 20px rgba(255,217,61,.4)}}
+.map-connector{width:40px;height:4px;flex-shrink:0;position:relative;z-index:1;}
+.map-connector.done{background:var(--green);}
+.map-connector.next{background:repeating-linear-gradient(90deg,var(--yellow) 0,var(--yellow) 6px,transparent 6px,transparent 12px);}
+.map-connector.locked{background:rgba(255,255,255,.15);}
+
+/* ===== GAME ===== */
+#screen-game{z-index:10;padding:0;gap:0;justify-content:flex-start;}
+
+/* HUD */
+.hud{width:100%;display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:rgba(0,0,0,.6);backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;z-index:20;gap:6px;}
+.hud-char{font-size:1.2rem;}
+.hud-dest{font-family:'Fredoka One',cursive;font-size:.85rem;color:var(--yellow);flex:1;text-align:center;}
+.hud-hearts{font-size:1rem;letter-spacing:1px;}
+.hud-score{font-family:'Fredoka One',cursive;font-size:.85rem;color:var(--cyan);}
+
+/* SPACE SCENE — 38% height */
+.space-scene{width:100%;position:relative;overflow:hidden;background:radial-gradient(ellipse at 15% 50%,#0d1440 0%,#060818 70%);flex-shrink:0;}
+
+.planet-wrap{position:absolute;right:40px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;animation:pfloat2 4s ease-in-out infinite;}
+@keyframes pfloat2{0%,100%{transform:translateY(-50%) translateY(0)}50%{transform:translateY(-50%) translateY(-12px)}}
+.planet-body{border-radius:50%;position:relative;}
+.planet-ring{position:absolute;border-radius:50%;border:5px solid;top:50%;left:50%;transform:translate(-50%,-50%) rotateX(75deg);}
+.planet-name{font-family:'Fredoka One',cursive;font-size:.9rem;text-align:center;}
+.planet-op{font-size:.65rem;color:rgba(255,255,255,.5);font-weight:800;letter-spacing:1px;text-transform:uppercase;}
+.disc-badge{font-size:.58rem;font-weight:800;color:var(--pink);background:rgba(255,60,172,.15);padding:2px 7px;border-radius:9px;letter-spacing:1px;text-transform:uppercase;}
+
+#rocket{position:absolute;left:30px;top:50%;transform:translateY(-50%);font-size:2.2rem;transition:left 1.1s cubic-bezier(.34,.01,.64,1);filter:drop-shadow(0 0 12px rgba(255,150,50,.9));z-index:5;}
+.rocket-trail{position:absolute;top:50%;left:30px;height:3px;border-radius:3px;background:linear-gradient(90deg,transparent,var(--orange),var(--yellow));transform:translateY(-50%);pointer-events:none;transition:width 1.1s cubic-bezier(.34,.01,.64,1);opacity:.5;}
+.step-dots{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);display:flex;gap:5px;align-items:center;}
+.sdot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.18);border:2px solid rgba(255,255,255,.2);transition:all .3s;}
+.sdot.done{background:var(--green);border-color:var(--green);box-shadow:0 0 6px var(--green);}
+.sdot.cur{background:var(--yellow);border-color:var(--yellow);box-shadow:0 0 6px var(--yellow);animation:dotpulse 1s ease-in-out infinite;}
+@keyframes dotpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.5)}}
+
+/* PUZZLE PANEL — 62% height, scrollable */
+.puzzle-panel{
+  width:100%;flex:1;background:rgba(4,6,24,.96);backdrop-filter:blur(16px);
+  border-top:2px solid rgba(255,255,255,.1);
+  display:flex;flex-direction:column;align-items:center;
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:12px 14px 20px;gap:10px;position:relative;z-index:20;
+}
+
+/* Power button row */
+.power-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.streak-bar{display:flex;gap:5px;align-items:center;}
+.sgem{font-size:.9rem;filter:grayscale(1) brightness(.5);transition:all .25s;}
+.sgem.lit{filter:none;animation:gempop .3s;}
+@keyframes gempop{0%{transform:scale(1)}50%{transform:scale(1.7)}100%{transform:scale(1)}}
+.streak-label{font-size:.65rem;font-weight:800;color:rgba(255,255,255,.35);margin-left:3px;}
+
+.power-btn{
+  background:rgba(255,255,255,.07);border:2px solid rgba(255,255,255,.2);
+  border-radius:24px;padding:7px 14px;cursor:pointer;
+  font-family:'Fredoka One',cursive;font-size:.9rem;color:rgba(255,255,255,.4);
+  transition:all .2s;white-space:nowrap;
+  display:flex;align-items:center;gap:6px;
+}
+.power-btn.ready{
+  background:linear-gradient(135deg,rgba(255,217,61,.2),rgba(255,107,53,.2));
+  border-color:var(--yellow);color:var(--yellow);
+  box-shadow:0 0 16px rgba(255,217,61,.4);
+  animation:powerReady 1s ease-in-out infinite;
+}
+@keyframes powerReady{0%,100%{box-shadow:0 0 10px rgba(255,217,61,.3)}50%{box-shadow:0 0 28px rgba(255,217,61,.7)}}
+.power-btn.ready:hover{transform:scale(1.05);}
+.power-btn:not(.ready){cursor:not-allowed;}
+
+.pz-label{font-size:.68rem;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:var(--purple);background:rgba(155,93,229,.15);padding:3px 12px;border-radius:20px;align-self:center;}
+.pz-question{font-family:'Fredoka One',cursive;font-size:1.5rem;color:var(--yellow);text-align:center;line-height:1.3;}
+#pzInteractive{width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;}
+
+/* ---- FUEL ---- */
+.fuel-wrap{display:flex;flex-direction:column;align-items:center;gap:9px;width:100%;}
+.fuel-top{display:flex;align-items:center;gap:10px;}
+.fuel-reading{font-family:'Fredoka One',cursive;font-size:2.4rem;color:var(--cyan);min-width:60px;text-align:center;}
+.fuel-tgt{font-family:'Fredoka One',cursive;font-size:1rem;color:rgba(255,255,255,.45);}
+.fuel-gauge{width:100%;max-width:360px;height:48px;background:rgba(255,255,255,.08);border-radius:24px;border:2px solid rgba(255,255,255,.2);position:relative;overflow:hidden;cursor:pointer;touch-action:none;}
+.fuel-fill{height:100%;border-radius:24px;background:linear-gradient(90deg,#FF4466,#FF6B35,#FFD93D,#6BCB77);pointer-events:none;transition:width .05s;}
+.fuel-marker{position:absolute;top:-6px;width:4px;height:calc(100%+12px);background:white;border-radius:2px;pointer-events:none;box-shadow:0 0 8px white;}
+.fuel-labels{display:flex;justify-content:space-between;width:100%;max-width:360px;font-size:.72rem;font-weight:800;color:rgba(255,255,255,.4);}
+
+/* ---- ASTEROIDS ---- */
+.ast-field{display:flex;flex-wrap:wrap;gap:9px;justify-content:center;max-width:360px;}
+.ast-btn{width:58px;height:58px;border-radius:40% 60% 55% 45%/45% 55% 45% 55%;background:linear-gradient(135deg,#555,#333);border:2px solid rgba(255,255,255,.3);font-family:'Fredoka One',cursive;font-size:1.25rem;color:white;cursor:pointer;transition:all .2s;box-shadow:0 4px 10px rgba(0,0,0,.4);}
+.ast-btn:hover,.ast-btn:active{transform:scale(1.12) rotate(5deg);border-color:var(--yellow);}
+.ast-btn.sel{background:linear-gradient(135deg,var(--orange),var(--yellow));border-color:var(--yellow);box-shadow:0 0 14px rgba(255,217,61,.5);color:#1a0a00;}
+.ast-btn.wrong{animation:wshake .4s;}
+.ast-sum{font-family:'Fredoka One',cursive;font-size:1.1rem;color:var(--cyan);}
+
+/* ---- LOCK ---- */
+.lock-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;}
+.lock-dials{display:flex;gap:8px;}
+.lock-dial{width:62px;display:flex;flex-direction:column;align-items:center;gap:3px;}
+.dial-disp{width:62px;height:70px;background:rgba(255,255,255,.08);border:3px solid rgba(255,255,255,.3);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:'Fredoka One',cursive;font-size:2rem;color:white;transition:all .15s;}
+.dial-disp.hot{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 14px rgba(78,205,196,.4);}
+.dbtn{background:none;border:none;color:rgba(255,255,255,.55);font-size:1.4rem;cursor:pointer;padding:3px 10px;border-radius:8px;transition:all .1s;}
+.dbtn:hover,.dbtn:active{color:var(--yellow);background:rgba(255,217,61,.1);}
+
+/* ---- GEAR ---- */
+.gear-wrap{display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;}
+.gear-controls{display:flex;flex-direction:column;align-items:center;gap:8px;}
+.gear-svg{cursor:pointer;}
+.gear-btns{display:flex;gap:8px;}
+.gbtn{background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);color:white;font-size:1rem;padding:6px 14px;border-radius:9px;cursor:pointer;font-family:'Fredoka One',cursive;transition:all .1s;}
+.gbtn:hover,.gbtn:active{background:rgba(255,217,61,.2);border-color:var(--yellow);color:var(--yellow);}
+.gear-right{display:flex;flex-direction:column;align-items:center;gap:6px;}
+.gear-arr{font-size:1.8rem;color:var(--yellow);}
+.gear-disp{width:84px;height:84px;border-radius:50%;background:rgba(255,255,255,.08);border:3px solid var(--cyan);display:flex;align-items:center;justify-content:center;font-family:'Fredoka One',cursive;font-size:2rem;color:var(--cyan);box-shadow:0 0 18px rgba(78,205,196,.3);}
+.gear-tgt{font-size:.75rem;font-weight:800;color:rgba(255,255,255,.5);}
+.gear-steps{font-size:.7rem;font-weight:800;color:rgba(255,255,255,.35);}
+
+/* ---- SCALE ---- */
+.scale-wrap{display:flex;flex-direction:column;align-items:center;gap:9px;width:100%;}
+.scale-vis{width:100%;max-width:340px;height:96px;position:relative;}
+.scale-beam-el{position:absolute;bottom:30px;left:50%;width:220px;height:5px;background:var(--yellow);border-radius:3px;transform-origin:center;transform:translateX(-50%) rotate(0deg);transition:transform .35s;}
+.scale-pole-el{position:absolute;bottom:30px;left:50%;width:5px;height:40px;background:rgba(255,255,255,.35);border-radius:3px;transform:translateX(-50%);}
+.scale-base-el{position:absolute;bottom:24px;left:50%;width:44px;height:10px;background:rgba(255,255,255,.25);border-radius:5px;transform:translateX(-50%);}
+.scale-pan-l,.scale-pan-r{position:absolute;bottom:0;width:84px;height:34px;background:rgba(255,255,255,.1);border:2px solid var(--yellow);border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:'Fredoka One',cursive;font-size:1.4rem;color:var(--yellow);transition:bottom .3s;}
+.scale-pan-l{left:8px;}.scale-pan-r{right:8px;}
+.scale-weights{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;max-width:340px;}
+.wbtn{background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);border-radius:9px;padding:7px 12px;font-family:'Fredoka One',cursive;font-size:1.1rem;color:white;cursor:pointer;transition:all .15s;box-shadow:0 3px 0 rgba(0,0,0,.3);}
+.wbtn:hover,.wbtn:active{background:rgba(255,217,61,.2);border-color:var(--yellow);transform:translateY(-2px);}
+.wbtn.used{opacity:.25;cursor:not-allowed;transform:none !important;}
+.scale-info{font-size:.8rem;font-weight:800;color:rgba(255,255,255,.45);}
+
+/* COMMON BTNS */
+.fbtn{background:linear-gradient(135deg,var(--cyan),var(--purple));border:none;color:white;font-family:'Fredoka One',cursive;font-size:1.1rem;padding:10px 30px;border-radius:40px;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.35);transition:all .1s;}
+.fbtn:hover{transform:translateY(-2px);}
+.fbtn:active{transform:translateY(2px);box-shadow:0 2px 0 rgba(0,0,0,.35);}
+.chkbtn{background:linear-gradient(135deg,var(--green),var(--cyan));border:none;color:#111;font-family:'Fredoka One',cursive;font-size:1.05rem;padding:9px 26px;border-radius:30px;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.3);transition:all .1s;}
+.chkbtn:hover{transform:translateY(-2px);}
+.chkbtn:active{transform:translateY(2px);box-shadow:0 2px 0 rgba(0,0,0,.3);}
+
+@keyframes wshake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+
+/* HINT BOX */
+.hint-box{background:rgba(107,203,119,.12);border:2px solid var(--green);border-radius:12px;padding:9px 16px;font-size:.88rem;font-weight:700;color:var(--green);text-align:center;width:100%;max-width:360px;animation:fadeIn .3s;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+
+/* ===== OVERLAYS ===== */
+.overlay{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:rgba(4,6,22,.94);backdrop-filter:blur(14px);text-align:center;padding:22px;overflow-y:auto;}
+.overlay.show{display:flex;}
+.ov-emoji{font-size:4rem;animation:ovpop .5s cubic-bezier(.34,1.56,.64,1);}
+@keyframes ovpop{0%{transform:scale(0) rotate(-20deg)}100%{transform:scale(1) rotate(0)}}
+.ov-title{font-family:'Fredoka One',cursive;font-size:clamp(1.8rem,6vw,3rem);background:linear-gradient(135deg,var(--yellow),var(--orange),var(--pink));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.ov-body{font-size:.95rem;font-weight:700;line-height:1.9;color:rgba(255,255,255,.8);}
+.btn-next{background:linear-gradient(135deg,var(--cyan),var(--purple));border:none;color:white;font-family:'Fredoka One',cursive;font-size:1.2rem;padding:11px 36px;border-radius:50px;cursor:pointer;box-shadow:0 6px 0 rgba(0,0,0,.3);transition:all .1s;}
+.btn-next:hover{transform:translateY(-2px);}.btn-next:active{transform:translateY(4px);}
+.btn-ghost{background:none;border:2px solid rgba(255,255,255,.25);color:rgba(255,255,255,.65);font-family:'Fredoka One',cursive;font-size:.95rem;padding:7px 22px;border-radius:40px;cursor:pointer;transition:all .15s;}
+.btn-ghost:hover{border-color:rgba(255,255,255,.6);color:white;}
+
+/* Feedback pop */
+#feedbackPop{position:fixed;top:35%;left:50%;transform:translate(-50%,-50%) scale(0);font-family:'Fredoka One',cursive;font-size:clamp(2rem,7vw,4rem);pointer-events:none;z-index:200;transition:all .22s cubic-bezier(.34,1.56,.64,1);text-shadow:0 4px 16px rgba(0,0,0,.5);}
+#feedbackPop.show{transform:translate(-50%,-50%) scale(1);}
+#feedbackPop.hide{transform:translate(-50%,-50%) scale(0) translateY(-40px);opacity:0;}
+
+/* Power flash */
+#powerOverlay{position:fixed;inset:0;z-index:150;pointer-events:none;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .3s;}
+#powerOverlay.show{opacity:1;}
+.power-flash-text{font-family:'Fredoka One',cursive;font-size:clamp(1.8rem,6vw,3.2rem);text-align:center;padding:16px 28px;border-radius:18px;background:rgba(0,0,0,.8);animation:pbounce .5s cubic-bezier(.34,1.56,.64,1);}
+@keyframes pbounce{0%{transform:scale(.3) rotate(-12deg)}100%{transform:scale(1) rotate(0)}}
+
+/* Particles */
+.cpiece{position:fixed;border-radius:2px;pointer-events:none;z-index:300;animation:cfall linear forwards;}
+@keyframes cfall{0%{opacity:1;transform:translateY(-10px) rotate(0)}100%{opacity:0;transform:translateY(100vh) rotate(720deg)}}
+.pfx{position:fixed;pointer-events:none;z-index:300;font-size:1.3rem;animation:pfloat3 ease-out forwards;}
+@keyframes pfloat3{0%{transform:translate(0,0) scale(1);opacity:1}100%{transform:translate(var(--tx),var(--ty)) scale(0);opacity:0}}
+</style>
+</head>
+<body>
+<div id="starfield"></div>
+<div id="feedbackPop"></div>
+<div id="powerOverlay"><div class="power-flash-text" id="powerFlashText"></div></div>
+
+<!-- ===== TITLE ===== -->
+<div class="screen active" id="screen-title">
+  <div class="title-glow">Math-a-paloosa!</div>
+  <div class="title-sub">⚡ Epic Space Math Adventure ⚡</div>
+  <div class="hero-row">
+    <div class="hcard zap" onclick="selectHero('zap')">
+      <span class="hem">🤖</span><div class="hname">ZAP</div>
+      <div class="hpow">Brain laser! 3 in a row</div>
+    </div>
+    <div class="hcard kaze" onclick="selectHero('kaze')">
+      <span class="hem">🥷</span><div class="hname">KAZE</div>
+      <div class="hpow">Vanish &amp; skip a puzzle!</div>
+    </div>
+    <div class="hcard dino" onclick="selectHero('dino')">
+      <span class="hem">🦕</span><div class="hname">DINO</div>
+      <div class="hpow">Team hint power!</div>
+    </div>
+  </div>
+  <div id="charDisplay" class="selected-char-display" style="display:none"></div>
+  <div class="title-btns" id="titleBtns">
+    <div id="btnContinue" style="display:none">
+      <button class="btn-primary" onclick="continueGame()">🚀 Continue Journey</button>
+    </div>
+    <button class="btn-secondary" onclick="goMap()">🗺 Choose Planet</button>
+    <button class="btn-primary" id="btnNewGame" onclick="newGame()" style="display:none">▶ New Game</button>
+  </div>
+  <div class="pick-label">👆 TAP YOUR HERO FIRST</div>
+</div>
+
+<!-- ===== PLANET MAP ===== -->
+<div class="screen" id="screen-map">
+  <div class="map-header">
+    <button class="btn-ghost" onclick="showScreen('screen-title')" style="font-size:.85rem;padding:5px 14px;">← Back</button>
+    <div class="map-title">🗺 Choose Destination</div>
+    <div style="width:70px"></div>
+  </div>
+  <div class="map-scroll">
+    <div class="map-inner" id="mapInner"></div>
+  </div>
+</div>
+
+<!-- ===== GAME ===== -->
+<div class="screen" id="screen-game">
+  <div class="hud">
+    <span class="hud-char" id="hudChar">🤖</span>
+    <span class="hud-dest" id="hudDest">→ The Moon</span>
+    <span class="hud-hearts" id="hudHearts">❤️❤️❤️</span>
+    <span class="hud-score" id="hudScore">0 ✨</span>
+  </div>
+  <div class="space-scene" id="spaceScene">
+    <div class="rocket-trail" id="rocketTrail" style="width:0"></div>
+    <div id="rocket">🚀</div>
+    <div class="planet-wrap" id="planetWrap"></div>
+    <div class="step-dots" id="stepDots"></div>
+  </div>
+  <div class="puzzle-panel" id="puzzlePanel">
+    <div class="power-row">
+      <div class="streak-bar" id="streakBar"></div>
+      <button class="power-btn" id="powerBtn" onclick="usePower()">⚡ Power</button>
+    </div>
+    <div class="pz-label" id="pzLabel">FUEL UP!</div>
+    <div class="pz-question" id="pzQ"></div>
+    <div id="pzInteractive"></div>
+  </div>
+</div>
+
+<!-- PLANET REACHED -->
+<div class="overlay" id="ov-planet">
+  <div class="ov-emoji" id="ovPEmoji"></div>
+  <div class="ov-title" id="ovPTitle"></div>
+  <div class="ov-body" id="ovPBody"></div>
+  <button class="btn-next" onclick="nextPlanet()">Blast to next stop! 🚀</button>
+  <button class="btn-ghost" onclick="goMapFromGame()">🗺 Planet Map</button>
+  <button class="btn-ghost" onclick="goTitle()">Change Hero</button>
+</div>
+
+<!-- GAME OVER -->
+<div class="overlay" id="ov-gameover">
+  <div class="ov-emoji">💫</div>
+  <div class="ov-title">Out of Fuel!</div>
+  <div class="ov-body" id="ovGOBody"></div>
+  <button class="btn-next" onclick="retryPlanet()">Try Again! 💪</button>
+  <button class="btn-ghost" onclick="goMapFromGame()">🗺 Planet Map</button>
+  <button class="btn-ghost" onclick="goTitle()">Change Hero</button>
+</div>
+
+<script>
+// ==================== PLANETS ====================
+const SOLAR=[
+  {name:'The Moon',      emoji:'🌙',color:'#C4C4C4',size:70, ring:false,desc:"Earth's nearest neighbour! Covered in craters and totally silent."},
+  {name:'Mars',          emoji:'🔴',color:'#CD4B2E',size:84, ring:false,desc:'The Red Planet! Home to the tallest volcano in the solar system.'},
+  {name:'Asteroid Belt', emoji:'☄️',color:'#9A7A5A',size:62, ring:false,desc:'Millions of rocks flying around the Sun between Mars and Jupiter!'},
+  {name:'Jupiter',       emoji:'🟠',color:'#C88B3A',size:110,ring:false,desc:"King of planets! Its Great Red Spot is a storm bigger than Earth."},
+  {name:'Saturn',        emoji:'💛',color:'#E8D080',size:100,ring:true, ringColor:'#C8A030',desc:'Those famous rings are made of billions of ice and rock chunks!'},
+  {name:'Uranus',        emoji:'🔵',color:'#7DE8E8',size:86, ring:true, ringColor:'#4ECDC4',desc:'Spins completely on its side — like a rolling ball through space!'},
+  {name:'Neptune',       emoji:'🌀',color:'#3050C8',size:82, ring:false,desc:'The windiest planet — storms raging over 2,000 kilometres per hour!'},
+  {name:'Pluto',         emoji:'❄️',color:'#B8D0E0',size:50, ring:false,desc:"Tiny but mighty! Pluto has a heart-shaped glacier the size of Texas."},
+  {name:'Crunchy',       emoji:'🪐',color:'#FF8C42',size:94, ring:true, ringColor:'#FF6B35',desc:'DISCOVERED BY ZOE! Planet Crunchy — the crunchiest planet in the universe.',discovered:true},
+];
+const MYSTERY_NAMES=['Bloop','Zingledorf','Fizzburp','Snorkelton','Wumbozia','Crinklemax','Blorptus','Squonkle','Flumpkin','Gorbzle'];
+const MYSTERY_COLORS=['#FF3CAC','#9B5DE5','#4ECDC4','#FFD93D','#6BCB77','#FF6B35','#E040FB','#00E5FF','#FF6680','#A0FF80'];
+const MYSTERY_EMOJIS=['🌸','💜','🟣','🟤','⬛','🔶','🔷','🌟','🟥','🟩'];
+function mysteryPlanet(n){
+  const i=n%MYSTERY_NAMES.length;
+  const ord=['1st','2nd','3rd','4th','5th','6th','7th','8th','9th','10th'];
+  return{name:MYSTERY_NAMES[i],emoji:MYSTERY_EMOJIS[i],color:MYSTERY_COLORS[i],
+    size:72+(i*7%36),ring:i%2===0,ringColor:MYSTERY_COLORS[(i+4)%MYSTERY_COLORS.length],
+    desc:`Zoe discovered this! The ${ord[n]||n+1+'th'} planet beyond our solar system.`,discovered:true};
+}
+function getPlanet(i){return i<SOLAR.length?SOLAR[i]:mysteryPlanet(i-SOLAR.length);}
+const TOTAL_PLANETS=20; // show 20 on map, generate more if needed
+
+// ==================== CHARS ====================
+const CHARS={
+  zap: {emoji:'🤖',name:'Zap', power:'⚡ BRAIN LASER!', pwrSub:'ZAP zaps wrong answers away!',  col:'#4ECDC4',
+        powerLabel:'⚡ ZAP Power!'},
+  kaze:{emoji:'🥷',name:'Kaze',power:'🌀 VANISH!',      pwrSub:'KAZE skips this puzzle!',       col:'#9B5DE5',
+        powerLabel:'🌀 Vanish!'},
+  dino:{emoji:'🦕',name:'Dino',power:'🦴 SQUAD HINT!',  pwrSub:'The crew sends a mega hint!',   col:'#6BCB77',
+        powerLabel:'🦴 Get Hint!'},
+};
+
+// ==================== MATH ====================
+function mathCfg(pi){
+  if(pi===0)return{ops:['+'],lo:2,hi:15,lbl:'Addition'};
+  if(pi===1)return{ops:['-'],lo:5,hi:25,lbl:'Subtraction'};
+  if(pi===2)return{ops:['+','-'],lo:5,hi:30,lbl:'Add & Subtract'};
+  if(pi===3)return{ops:['×'],lo:2,hi:9,lbl:'Multiplication'};
+  if(pi===4)return{ops:['÷'],lo:2,hi:9,lbl:'Division'};
+  if(pi===5)return{ops:['×','÷'],lo:2,hi:10,lbl:'Multiply & Divide'};
+  if(pi===6)return{ops:['+','-','×'],lo:2,hi:10,lbl:'Mixed'};
+  return{ops:['+','-','×','÷'],lo:2,hi:10,lbl:'All Operations'};
+}
+function ri(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+function mkEq(cfg){
+  const op=cfg.ops[Math.floor(Math.random()*cfg.ops.length)];
+  let a,b,ans;
+  if(op==='+'){a=ri(cfg.lo,cfg.hi);b=ri(cfg.lo,cfg.hi);ans=a+b;}
+  else if(op==='-'){b=ri(cfg.lo,cfg.hi);ans=ri(cfg.lo,cfg.hi);a=b+ans;} // ensure positive
+  else if(op==='×'){a=ri(2,cfg.hi);b=ri(2,cfg.hi);ans=a*b;}
+  else{b=ri(2,cfg.hi);ans=ri(2,cfg.hi);a=b*ans;}
+  return{a,b,op,ans};
+}
+function shuffle(a){const r=[...a];for(let i=r.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[r[i],r[j]]=[r[j],r[i]];}return r;}
+
+// ==================== SAVE / LOAD ====================
+const SAVE_KEY='mathapaloosa_v3';
+function loadSave(){
+  try{const d=localStorage.getItem(SAVE_KEY);return d?JSON.parse(d):{maxPlanet:0,totalScore:0};}
+  catch(e){return{maxPlanet:0,totalScore:0};}
+}
+function saveProgress(pi,score){
+  const d=loadSave();
+  if(pi>d.maxPlanet)d.maxPlanet=pi;
+  d.totalScore=(d.totalScore||0)+score;
+  d.lastPlanet=pi;
+  try{localStorage.setItem(SAVE_KEY,JSON.stringify(d));}catch(e){}
+}
+
+// ==================== STATE ====================
+let G={};
+let selectedHero=null;
+
+function initGame(ch,pi){
+  G={char:ch,pi:pi,hearts:3,score:0,streak:0,powerReady:false,
+     stepsTotal:Math.min(10+Math.floor(pi/2),18),stepsDone:0,
+     skipUsed:false,pAnswered:false,wrongThisQ:false,eq:null,ptype:null};
+}
+
+// ==================== HERO SELECT ====================
+function selectHero(ch){
+  selectedHero=ch;
+  document.querySelectorAll('.hcard').forEach(c=>c.style.transform='');
+  document.querySelector('.hcard.'+ch).style.transform='translateY(-6px)';
+  document.querySelector('.hcard.'+ch).style.borderColor=CHARS[ch].col;
+  document.querySelector('.hcard.'+ch).style.boxShadow=`0 0 24px ${CHARS[ch].col}88`;
+
+  const cd=document.getElementById('charDisplay');
+  cd.style.display='block';
+  cd.innerHTML=`${CHARS[ch].emoji} <strong>${CHARS[ch].name}</strong> selected! ${CHARS[ch].powerLabel}`;
+
+  // show game buttons
+  const save=loadSave();
+  document.getElementById('btnNewGame').style.display='inline-block';
+  document.getElementById('btnContinue').style.display=save.lastPlanet!=null?'block':'none';
+  document.querySelector('.pick-label').textContent='Now choose where to go!';
+}
+
+function continueGame(){
+  if(!selectedHero){alert('Pick a hero first!');return;}
+  const save=loadSave();
+  startGame(selectedHero,save.lastPlanet||0);
+}
+function newGame(){
+  if(!selectedHero){alert('Pick a hero first!');return;}
+  startGame(selectedHero,0);
+}
+function goMap(){
+  if(!selectedHero){alert('Pick a hero first!');return;}
+  buildMap();showScreen('screen-map');
+}
+function goMapFromGame(){
+  hideOvs();buildMap();showScreen('screen-map');
+}
+function goTitle(){hideOvs();showScreen('screen-title');}
+
+// ==================== MAP ====================
+function buildMap(){
+  const save=loadSave();
+  const inner=document.getElementById('mapInner');
+  inner.innerHTML='';
+  const lineWidth=(TOTAL_PLANETS-1)*130+120;
+  inner.style.width=lineWidth+'px';
+
+  for(let i=0;i<TOTAL_PLANETS;i++){
+    const p=getPlanet(i);
+    const unlocked=i<=save.maxPlanet;
+    const completed=i<save.maxPlanet;
+    const current=i===save.maxPlanet;
+
+    const stop=document.createElement('div');
+    stop.className='map-stop '+(completed?'completed':current?'current':'locked')+(unlocked?' unlocked':'');
+
+    const badge=completed?'✅ Done':current?'📍 Here':'🔒 Locked';
+    stop.innerHTML=`<div class="mp-emoji">${p.emoji}</div><div class="mp-name">${p.name}</div><div class="mp-badge">${badge}</div>`;
+
+    if(unlocked){
+      const pi=i;
+      stop.onclick=()=>{
+        if(selectedHero){startGame(selectedHero,pi);}
+        else{showScreen('screen-title');alert('Pick a hero first!');}
+      };
+    }
+    inner.appendChild(stop);
+
+    if(i<TOTAL_PLANETS-1){
+      const conn=document.createElement('div');
+      conn.className='map-connector '+(completed?'done':current?'next':'locked');
+      inner.appendChild(conn);
+    }
+  }
+
+  // scroll to current planet
+  setTimeout(()=>{
+    const idx=save.maxPlanet;
+    const scrollTarget=Math.max(0,idx*130-80);
+    document.querySelector('.map-scroll').scrollLeft=scrollTarget;
+  },100);
+}
+
+// ==================== START GAME ====================
+function startGame(ch,pi){
+  hideOvs();
+  initGame(ch,pi);
+  showScreen('screen-game');
+  setSceneHeight();
+  renderPlanet(getPlanet(pi));
+  buildDots();
+  updateHUD();
+  updateStreakBar();
+  resetRocket();
+  genPuzzle();
+}
+
+function setSceneHeight(){
+  // Space = 38% of available height, puzzle = 62%
+  const vh=window.innerHeight;
+  const hudH=document.querySelector('.hud').offsetHeight||42;
+  const avail=vh-hudH;
+  document.querySelector('.space-scene').style.height=Math.round(avail*.36)+'px';
+}
+
+// ==================== PUZZLE TYPES ====================
+function pickType(pi){
+  const t=['fuel','asteroids','lock'];
+  if(pi>=2)t.push('gear');
+  if(pi>=4)t.push('scale');
+  return t[Math.floor(Math.random()*t.length)];
+}
+
+function genPuzzle(){
+  G.pAnswered=false;G.wrongThisQ=false;
+  const cfg=mathCfg(G.pi);
+  const eq=mkEq(cfg);
+  G.eq=eq;
+  const type=pickType(G.pi);
+  G.ptype=type;
+
+  // Clear hint if any
+  document.getElementById('pzInteractive').innerHTML='';
+
+  if(type==='fuel')          buildFuel(eq);
+  else if(type==='asteroids')buildAsteroids(eq);
+  else if(type==='lock')     buildLock(eq);
+  else if(type==='gear')     buildGear(eq);
+  else                       buildScale(eq);
+
+  updateStreakBar();
+  updatePowerBtn();
+}
+
+// ==================== FUEL ====================
+function buildFuel(eq){
+  const tgt=eq.ans;
+  const maxV=Math.max(tgt+ri(8,22),Math.ceil(tgt*1.6),25);
+  let cv=ri(0,Math.max(0,Math.floor(tgt*.3)));
+  setLQ('⛽ FUEL THE ROCKET',`Drag the gauge to exactly ${tgt}!`);
+  document.getElementById('pzInteractive').innerHTML=`
+    <div class="fuel-wrap">
+      <div class="fuel-top">
+        <span style="font-size:1.8rem">⛽</span>
+        <div class="fuel-reading" id="fuelR">${cv}</div>
+        <div class="fuel-tgt">Target: <span style="color:var(--yellow)">${tgt}</span></div>
+      </div>
+      <div class="fuel-gauge" id="fuelG">
+        <div class="fuel-fill" id="fuelF" style="width:${cv/maxV*100}%"></div>
+        <div class="fuel-marker" style="left:${tgt/maxV*100}%"></div>
+      </div>
+      <div class="fuel-labels"><span>0</span><span>${Math.round(maxV/2)}</span><span>${maxV}</span></div>
+      <button class="fbtn" onclick="checkFuel(${tgt},${maxV})">🚀 Lock In!</button>
+    </div>`;
+  const g=document.getElementById('fuelG');
+  g._v=cv;g._max=maxV;
+  function upd(x){
+    const r=g.getBoundingClientRect();
+    const p=Math.max(0,Math.min(1,(x-r.left)/r.width));
+    g._v=Math.round(p*maxV);
+    document.getElementById('fuelR').textContent=g._v;
+    document.getElementById('fuelF').style.width=(p*100)+'%';
+  }
+  g.addEventListener('mousedown',e=>{upd(e.clientX);g._d=true;e.preventDefault();});
+  window.addEventListener('mousemove',e=>{if(g._d)upd(e.clientX);});
+  window.addEventListener('mouseup',()=>g._d=false,{once:false});
+  g.addEventListener('touchstart',e=>{upd(e.touches[0].clientX);g._d=true;e.preventDefault();},{passive:false});
+  g.addEventListener('touchmove',e=>{if(g._d)upd(e.touches[0].clientX);e.preventDefault();},{passive:false});
+  g.addEventListener('touchend',()=>g._d=false);
+}
+window.checkFuel=function(tgt,maxV){
+  if(G.pAnswered)return;
+  const g=document.getElementById('fuelG');
+  const tol=Math.max(1,Math.round(tgt*.1));
+  if(Math.abs(g._v-tgt)<=tol){
+    document.getElementById('fuelF').style.background='linear-gradient(90deg,var(--green),#6BCB77)';
+    onCorrect();
+  }else{
+    g.style.boxShadow='0 0 0 3px var(--red)';
+    setTimeout(()=>g.style.boxShadow='',600);
+    onWrong();
+  }
+};
+
+// ==================== ASTEROIDS ====================
+function buildAsteroids(eq){
+  const tgt=eq.ans;
+  // Build chunks that actually sum to tgt
+  const chunks=[];let rem=tgt;
+  const numChunks=Math.min(6,Math.max(3,Math.floor(tgt/4)));
+  for(let i=0;i<numChunks-1;i++){
+    const v=ri(1,Math.max(1,Math.floor(rem/2)));
+    chunks.push(v);rem-=v;
+    if(rem<=0){rem=1;}
+  }
+  chunks.push(Math.max(1,rem));
+  // Decoys that don't sum to tgt
+  const decoys=[];
+  let attempts=0;
+  while(decoys.length<3&&attempts<30){
+    attempts++;
+    const d=ri(1,Math.max(3,tgt-1));
+    if(!chunks.includes(d))decoys.push(d);
+  }
+  const all=shuffle([...chunks,...decoys]);
+  window._asel=new Set();
+  window._atgt=tgt;
+  setLQ('🌌 ZAP THE ASTEROIDS',`Tap asteroids that add up to ${tgt}!`);
+  document.getElementById('pzInteractive').innerHTML=`
+    <div class="ast-field">${all.map((v,i)=>`<button class="ast-btn" id="ab${i}" onclick="togAst(${i},${v})">${v}</button>`).join('')}</div>
+    <div class="ast-sum">Sum: <span id="astS" style="color:var(--yellow)">0</span> / ${tgt}</div>
+    <button class="chkbtn" onclick="chkAst()">✅ Check!</button>`;
+}
+window.togAst=function(i,v){
+  if(G.pAnswered)return;
+  const b=document.getElementById('ab'+i);
+  if(window._asel.has(i)){window._asel.delete(i);b.classList.remove('sel');}
+  else{window._asel.add(i);b.classList.add('sel');}
+  const sum=[...window._asel].reduce((s,j)=>s+parseInt(document.getElementById('ab'+j).textContent),0);
+  document.getElementById('astS').textContent=sum;
+};
+window.chkAst=function(){
+  if(G.pAnswered)return;
+  const sum=[...window._asel].reduce((s,j)=>s+parseInt(document.getElementById('ab'+j).textContent),0);
+  if(sum===window._atgt){onCorrect();}
+  else{
+    document.querySelectorAll('.ast-btn.sel').forEach(b=>{b.classList.add('wrong');setTimeout(()=>b.classList.remove('wrong'),400);});
+    onWrong();
+  }
+};
+
+// ==================== LOCK ====================
+function buildLock(eq){
+  const tgt=eq.ans;
+  const digits=String(tgt).split('').map(Number);
+  window._lv=digits.map(()=>ri(0,9));
+  window._ltgt=digits;
+  setLQ('🔒 CRACK THE CODE',`Set the dials to show ${tgt}!`);
+  renderDials();
+  window.dialUp=function(i){window._lv[i]=(window._lv[i]+1)%10;renderDials();};
+  window.dialDown=function(i){window._lv[i]=(window._lv[i]+9)%10;renderDials();};
+}
+function renderDials(){
+  if(!window._lv)return;
+  const tgt=window._ltgt;
+  document.getElementById('pzInteractive').innerHTML=`
+    <div class="lock-wrap">
+      <div class="lock-dials">
+        ${window._lv.map((v,i)=>`
+          <div class="lock-dial">
+            <button class="dbtn" onclick="dialUp(${i})">▲</button>
+            <div class="dial-disp ${v===tgt[i]?'hot':''}" id="dd${i}">${v}</div>
+            <button class="dbtn" onclick="dialDown(${i})">▼</button>
+          </div>`).join('')}
+      </div>
+      <div style="font-size:.8rem;font-weight:800;color:rgba(255,255,255,.4)">Target: <span style="color:var(--yellow);font-family:'Fredoka One',cursive;font-size:1.2rem">${window._ltgt.join('')}</span></div>
+      <button class="chkbtn" onclick="chkLock()">🔓 Unlock!</button>
+    </div>`;}
+window.chkLock=function(){
+  if(G.pAnswered)return;
+  if(JSON.stringify(window._lv)===JSON.stringify(window._ltgt)){onCorrect();}
+  else{document.querySelectorAll('.dial-disp').forEach(d=>{d.style.borderColor='var(--red)';setTimeout(()=>d.style.borderColor='',500);});onWrong();}
+};
+
+// ==================== GEAR ====================
+// KEY FIX: target is always start + N*step, so it's always reachable
+function buildGear(eq){
+  const step=Math.max(1,(eq.op==='×'||eq.op==='÷')?ri(2,4):ri(1,3));
+  // start at a random multiple-of-step offset from answer
+  const offset=ri(1,5)*step; // always a positive multiple
+  const start=Math.max(0,eq.ans-offset); // start BELOW answer
+  // Recompute tgt to nearest reachable value
+  const tgt=start+Math.round((eq.ans-start)/step)*step;
+  // Verify: tgt must equal start + k*step for some k>=1
+  // And tgt should be a sensible number
+  const finalTgt=tgt>0?tgt:start+step;
+
+  window._gc=start;
+  window._gstart=start;
+  window._gstep=step;
+  window._gtgt=finalTgt;
+  window._grot=0;
+
+  setLQ('⚙️ SPIN THE GEARS',`Spin the gear until the output shows ${finalTgt}!`);
+  renderGear();
+
+  window.gearR=function(){
+    if(G.pAnswered)return;
+    window._gc+=window._gstep;
+    window._grot+=45;
+    renderGear();
+  };
+  window.gearL=function(){
+    if(G.pAnswered)return;
+    window._gc=Math.max(0,window._gc-window._gstep);
+    window._grot-=45;
+    renderGear();
+  };
+}
+function renderGear(){
+  const tgt=window._gtgt,step=window._gstep,cur=window._gc;
+  document.getElementById('pzInteractive').innerHTML=`
+    <div class="gear-wrap">
+      <div class="gear-controls">
+        <svg class="gear-svg" width="82" height="82" viewBox="0 0 82 82">
+          <g transform="rotate(${window._grot} 41 41)">
+            <circle cx="41" cy="41" r="27" fill="#FFD93D" stroke="#FF6B35" stroke-width="3"/>
+            <circle cx="41" cy="41" r="11" fill="#1a0a00"/>
+            ${[0,45,90,135,180,225,270,315].map(a=>`<rect x="38" y="5" width="6" height="13" rx="3" fill="#FFD93D" stroke="#FF6B35" stroke-width="1.5" transform="rotate(${a} 41 41)"/>`).join('')}
+          </g>
+        </svg>
+        <div class="gear-btns">
+          <button class="gbtn" onclick="gearL()">↺ −${step}</button>
+          <button class="gbtn" onclick="gearR()">+${step} ↻</button>
+        </div>
+        <div class="gear-steps" style="color:rgba(255,255,255,.35)">Each click: ${step>0?'+':''}${step}</div>
+      </div>
+      <div class="gear-arr">→</div>
+      <div class="gear-right">
+        <div class="gear-disp" style="${cur===tgt?'border-color:var(--green);color:var(--green);box-shadow:0 0 18px rgba(107,203,119,.4)':''}">${cur}</div>
+        <div class="gear-tgt">target: <span style="color:var(--yellow)">${tgt}</span></div>
+        <button class="chkbtn" style="margin-top:6px;" onclick="chkGear()">Lock In! ✅</button>
+      </div>
+    </div>`;}
+window.chkGear=function(){
+  if(G.pAnswered)return;
+  if(window._gc===window._gtgt){onCorrect();}
+  else{
+    const d=document.querySelector('.gear-disp');
+    if(d){d.style.borderColor='var(--red)';d.style.color='var(--red)';setTimeout(()=>{d.style.borderColor='var(--cyan)';d.style.color='var(--cyan)';},500);}
+    onWrong();
+  }
+};
+
+// ==================== SCALE ====================
+function buildScale(eq){
+  const tgt=eq.ans;
+  // Generate weights that can reach tgt
+  const maxW=Math.max(tgt,12);
+  const candidates=[];
+  for(let w=1;w<=Math.min(maxW,20);w++)candidates.push(w);
+  const pool=shuffle(candidates).slice(0,8);
+  window._sp=0;window._sused=new Set();window._stgt=tgt;window._spool=pool;
+  setLQ('⚖️ BALANCE THE SCALE',`Add weights to match ${tgt}!`);
+  renderScale();
+  window.addWt=function(i,w){
+    if(G.pAnswered||window._sused.has(i))return;
+    window._sused.add(i);window._sp+=w;renderScale();
+  };
+}
+function renderScale(){
+  const tgt=window._stgt,placed=window._sp,pool=window._spool;
+  const diff=placed-tgt;
+  const tilt=Math.min(18,Math.max(-18,diff*1.5));
+  const lBot=tilt<0?Math.abs(tilt)*2:0;
+  const rBot=tilt>0?tilt*2:0;
+  document.getElementById('pzInteractive').innerHTML=`
+    <div class="scale-wrap">
+      <div class="scale-vis">
+        <div class="scale-beam-el" style="transform:translateX(-50%) rotate(${tilt}deg)"></div>
+        <div class="scale-pole-el"></div>
+        <div class="scale-base-el"></div>
+        <div class="scale-pan-l" style="bottom:${lBot}px">${tgt}</div>
+        <div class="scale-pan-r" style="bottom:${rBot}px;${placed===tgt?'border-color:var(--green);color:var(--green)':''}">${placed||'?'}</div>
+      </div>
+      <div class="scale-weights">
+        ${pool.map((w,i)=>`<button class="wbtn ${window._sused.has(i)?'used':''}" onclick="addWt(${i},${w})">${w}</button>`).join('')}
+      </div>
+      <div class="scale-info">Added: <span style="color:var(--cyan);font-family:'Fredoka One',cursive">${placed}</span> / need: <span style="color:var(--yellow)">${tgt}</span></div>
+      <button class="chkbtn" onclick="chkScale()">⚖️ Check Balance!</button>
+    </div>`;}
+window.chkScale=function(){
+  if(G.pAnswered)return;
+  if(window._sp===window._stgt){onCorrect();}
+  else{
+    document.querySelectorAll('.scale-beam-el').forEach(b=>{b.style.background='var(--red)';setTimeout(()=>b.style.background='var(--yellow)',500);});
+    onWrong();
+  }
+};
+
+// ==================== CORRECT / WRONG ====================
+function onCorrect(){
+  if(G.pAnswered)return;
+  G.pAnswered=true;
+  G.streak++;
+  G.score+=G.wrongThisQ?10:15;
+  // Every 3 correct → power ready (don't auto-fire, let player use it)
+  if(G.streak%3===0&&G.streak>0){G.powerReady=true;}
+  updateHUD();updatePowerBtn();
+  const fb=['🎉 NICE!','⚡ BOOM!','🌟 YES!','🔥 HOT!','💥 POW!','🎯 ACE!','🚀 WOW!','🏆 EPIC!'];
+  showFB(fb[Math.floor(Math.random()*fb.length)],true);
+  burst();
+  G.stepsDone++;moveRocket();updateDots();
+  if(G.stepsDone>=G.stepsTotal)setTimeout(showPlanetReached,1500);
+  else setTimeout(genPuzzle,1500);
+}
+function onWrong(){
+  if(G.wrongThisQ)return;
+  G.wrongThisQ=true;G.streak=0;
+  G.hearts=Math.max(0,G.hearts-1);
+  updateHUD();updateStreakBar();updatePowerBtn();
+  showFB(['😬 Oops!','🙈 Almost!','💪 Try again!'][Math.floor(Math.random()*3)],false);
+  if(G.hearts===0)setTimeout(showGameOver,1200);
+}
+
+// ==================== POWER BUTTON ====================
+function updatePowerBtn(){
+  const btn=document.getElementById('powerBtn');
+  const c=CHARS[G.char];
+  if(G.powerReady){
+    btn.className='power-btn ready';
+    btn.innerHTML=`${c.emoji} ${c.powerLabel}`;
+  }else{
+    btn.className='power-btn';
+    btn.innerHTML=`⚡ Power (${3-(G.streak%3)||3} more)`;
+  }
+}
+window.usePower=function(){
+  if(!G.powerReady)return;
+  G.powerReady=false;
+  updatePowerBtn();
+  const c=CHARS[G.char];
+  document.getElementById('powerFlashText').textContent=c.power+'\n'+c.pwrSub;
+  const po=document.getElementById('powerOverlay');
+  po.classList.add('show');
+  confetti();
+  setTimeout(()=>po.classList.remove('show'),2200);
+
+  if(G.char==='kaze'&&!G.skipUsed){
+    // Skip current puzzle — mark it correct without moving planet progress
+    G.skipUsed=true;
+    G.pAnswered=true;
+    setTimeout(()=>{
+      G.stepsDone=Math.min(G.stepsDone+1,G.stepsTotal);
+      moveRocket();updateDots();
+      if(G.stepsDone>=G.stepsTotal)showPlanetReached();
+      else genPuzzle();
+    },2400);
+  }
+  if(G.char==='zap'){
+    // Zap: highlight the correct answer visually
+    setTimeout(()=>zapHighlight(),2300);
+  }
+  if(G.char==='dino'){
+    // Dino: show a hint box
+    setTimeout(()=>dinoHint(),2300);
+  }
+};
+function zapHighlight(){
+  if(!G.eq||G.pAnswered)return;
+  const eq=G.eq;
+  // Show the answer as a banner
+  const hint=document.createElement('div');
+  hint.className='hint-box';
+  hint.innerHTML=`⚡ ZAP reveals: <span style="font-family:'Fredoka One',cursive;font-size:1.3rem;color:var(--yellow)">${eq.a} ${eq.op} ${eq.b} = ${eq.ans}</span>`;
+  document.getElementById('pzInteractive').appendChild(hint);
+}
+function dinoHint(){
+  if(!G.eq||G.pAnswered)return;
+  const eq=G.eq;
+  let hint='';
+  if(eq.op==='+')hint=`Count up from ${eq.a} by ${eq.b} more!`;
+  else if(eq.op==='-')hint=`Start at ${eq.a} and count down ${eq.b} steps.`;
+  else if(eq.op==='×')hint=`${eq.a} groups of ${eq.b}. Try skip counting!`;
+  else hint=`${eq.a} ÷ ${eq.b}: how many times does ${eq.b} fit in ${eq.a}?`;
+  const h=document.createElement('div');
+  h.className='hint-box';
+  h.textContent='🦕 Dino: '+hint;
+  document.getElementById('pzInteractive').appendChild(h);
+}
+
+// ==================== ROCKET ====================
+function moveRocket(){
+  const sw=document.getElementById('spaceScene').offsetWidth;
+  const startX=sw*.07,endX=sw*.66;
+  const x=startX+(endX-startX)*(G.stepsDone/G.stepsTotal);
+  document.getElementById('rocket').style.left=x+'px';
+  document.getElementById('rocketTrail').style.left=startX+'px';
+  document.getElementById('rocketTrail').style.width=(x-startX+18)+'px';
+}
+function resetRocket(){
+  const r=document.getElementById('rocket');
+  const t=document.getElementById('rocketTrail');
+  r.style.transition='none';t.style.transition='none';
+  r.style.left='30px';t.style.width='0';
+  setTimeout(()=>{
+    r.style.transition='left 1.1s cubic-bezier(.34,.01,.64,1)';
+    t.style.transition='width 1.1s cubic-bezier(.34,.01,.64,1)';
+  },60);
+}
+
+// ==================== DOTS ====================
+function buildDots(){
+  const c=document.getElementById('stepDots');c.innerHTML='';
+  // Show max 14 dots to avoid overflow; if more steps, show compressed
+  const show=Math.min(G.stepsTotal,14);
+  for(let i=0;i<show;i++){
+    const d=document.createElement('div');
+    d.className='sdot'+(i===0?' cur':'');
+    d.id='sd'+i;
+    c.appendChild(d);
+  }
+  // label if compressed
+  if(G.stepsTotal>14){
+    const lbl=document.createElement('span');
+    lbl.style.cssText='font-size:.6rem;font-weight:800;color:rgba(255,255,255,.4);margin-left:4px;';
+    lbl.textContent=`×${Math.round(G.stepsTotal/14)}`;
+    c.appendChild(lbl);
+  }
+}
+function updateDots(){
+  const show=Math.min(G.stepsTotal,14);
+  for(let i=0;i<show;i++){
+    const d=document.getElementById('sd'+i);if(!d)continue;
+    // map dot index to step
+    const stepIdx=Math.round(i*(G.stepsTotal/show));
+    d.className='sdot'+(stepIdx<G.stepsDone?' done':stepIdx===Math.round(G.stepsDone*(show/G.stepsTotal))?' cur':'');
+  }
+}
+
+// ==================== PLANET ====================
+function renderPlanet(p){
+  const s=p.size;
+  const ring=p.ring?`<div class="planet-ring" style="width:${s*1.65}px;height:${s*.42}px;border-color:${p.ringColor||'#FFD93D'};"></div>`:'';
+  const disc=p.discovered?`<div class="disc-badge">✨ New Discovery!</div>`:'';
+  document.getElementById('planetWrap').innerHTML=`
+    <div class="planet-body" style="width:${s}px;height:${s}px;background:radial-gradient(circle at 32% 32%,${lighten(p.color)},${p.color} 60%,${darken(p.color)} 100%);box-shadow:inset -7px -7px 18px rgba(0,0,0,.5),0 0 36px ${p.color}88;">${ring}</div>
+    <div class="planet-name">${p.emoji} ${p.name}</div>
+    <div class="planet-op">${mathCfg(G.pi).lbl}</div>${disc}`;
+  document.getElementById('hudDest').textContent=`→ ${p.name}`;
+}
+function lighten(h){const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);return`rgb(${Math.min(255,r+55)},${Math.min(255,g+55)},${Math.min(255,b+55)})`;}
+function darken(h){const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);return`rgb(${Math.max(0,r-40)},${Math.max(0,g-40)},${Math.max(0,b-40)})`;}
+
+// ==================== HUD ====================
+function updateHUD(){
+  document.getElementById('hudChar').textContent=CHARS[G.char].emoji;
+  document.getElementById('hudHearts').textContent='❤️'.repeat(G.hearts)+'🖤'.repeat(3-G.hearts);
+  document.getElementById('hudScore').textContent=G.score+' ✨';
+}
+function updateStreakBar(){
+  const filled=G.streak%3;
+  document.getElementById('streakBar').innerHTML=
+    [0,1,2].map(i=>`<span class="sgem ${i<filled?'lit':''}" style="font-size:1rem">💎</span>`).join('')+
+    `<span class="streak-label">${filled}/3</span>`;
+}
+function setLQ(l,q){
+  document.getElementById('pzLabel').textContent=l;
+  document.getElementById('pzQ').textContent=q;
+}
+
+// ==================== OVERLAYS ====================
+function showPlanetReached(){
+  saveProgress(G.pi,G.score);
+  const p=getPlanet(G.pi);
+  const next=getPlanet(G.pi+1);
+  document.getElementById('ovPEmoji').textContent=p.emoji;
+  document.getElementById('ovPTitle').textContent=p.name+' — Reached! 🎉';
+  document.getElementById('ovPBody').innerHTML=
+    `${p.desc}<br><br>⭐ Score: <strong>${G.score}</strong>&nbsp;&nbsp;❤️ Hearts: <strong>${G.hearts}/3</strong><br><br>`+
+    `<span style="color:var(--cyan)">Next: ${next.emoji} <strong>${next.name}</strong></span>`+
+    (next.discovered?'<br><span style="color:var(--pink);font-size:.8rem">✨ A newly discovered planet!</span>':'');
+  confetti();showOverlay('ov-planet');
+}
+function showGameOver(){
+  document.getElementById('ovGOBody').innerHTML=
+    `${CHARS[G.char].emoji} ${CHARS[G.char].name} ran out of fuel!<br><br>`+
+    `⭐ Score: <strong>${G.score}</strong><br>🚀 Made it to: <strong>${getPlanet(G.pi).name}</strong>`;
+  showOverlay('ov-gameover');
+}
+function nextPlanet(){
+  hideOvs();
+  const nextPi=G.pi+1;
+  const ch=G.char;
+  initGame(ch,nextPi);
+  showScreen('screen-game');
+  setSceneHeight();
+  renderPlanet(getPlanet(nextPi));
+  buildDots();updateHUD();updateStreakBar();updatePowerBtn();resetRocket();genPuzzle();
+}
+function retryPlanet(){
+  hideOvs();
+  const pi=G.pi,ch=G.char;
+  initGame(ch,pi);
+  showScreen('screen-game');
+  setSceneHeight();
+  renderPlanet(getPlanet(pi));
+  buildDots();updateHUD();updateStreakBar();updatePowerBtn();resetRocket();genPuzzle();
+}
+function showOverlay(id){document.getElementById(id).classList.add('show');}
+function hideOvs(){document.querySelectorAll('.overlay').forEach(o=>o.classList.remove('show'));}
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+
+// ==================== EFFECTS ====================
+function showFB(txt,good){
+  const fp=document.getElementById('feedbackPop');
+  fp.textContent=txt;fp.style.color=good?'#FFD93D':'#FF6B6B';
+  fp.classList.remove('hide');fp.classList.add('show');
+  setTimeout(()=>{fp.classList.add('hide');setTimeout(()=>fp.classList.remove('show','hide'),350);},850);
+}
+function burst(){
+  const em=['⭐','✨','💥','🌟','⚡','🎉'];
+  const x=window.innerWidth/2,y=window.innerHeight*.35;
+  for(let i=0;i<8;i++){
+    const p=document.createElement('div');p.className='pfx';
+    p.textContent=em[i%em.length];
+    p.style.cssText=`left:${x}px;top:${y}px;--tx:${ri(-130,130)}px;--ty:${ri(-130,-30)}px;animation-duration:${.45+Math.random()*.5}s`;
+    document.body.appendChild(p);setTimeout(()=>p.remove(),900);
+  }
+}
+function confetti(){
+  const cols=['#FFD93D','#FF6B35','#FF3CAC','#4ECDC4','#6BCB77','#9B5DE5','#ffffff'];
+  for(let i=0;i<55;i++){
+    setTimeout(()=>{
+      const c=document.createElement('div');c.className='cpiece';
+      c.style.cssText=`left:${Math.random()*100}vw;top:-12px;background:${cols[Math.floor(Math.random()*cols.length)]};width:${5+Math.random()*9}px;height:${5+Math.random()*9}px;animation-duration:${1.1+Math.random()*2}s;border-radius:${Math.random()>.5?'50%':'2px'}`;
+      document.body.appendChild(c);setTimeout(()=>c.remove(),3200);
+    },i*32);
+  }
+}
+
+// ==================== INIT ====================
+// Check save and update title buttons
+(function(){
+  const save=loadSave();
+  if(save.lastPlanet!=null&&save.lastPlanet>0){
+    document.getElementById('btnContinue').style.display='none'; // shown after hero picked
+  }
+  // Starfield
+  const sf=document.getElementById('starfield');
+  for(let i=0;i<140;i++){
+    const s=document.createElement('div');
+    const sz=Math.random()<.75?1:Math.random()<.6?2:3;
+    s.className='star';
+    s.style.cssText=`width:${sz}px;height:${sz}px;left:${Math.random()*100}%;top:${Math.random()*100}%;animation-duration:${2+Math.random()*4}s;animation-delay:${Math.random()*4}s;opacity:${.12+Math.random()*.88}`;
+    sf.appendChild(s);
+  }
+  // Resize handler
+  window.addEventListener('resize',()=>{if(document.getElementById('screen-game').classList.contains('active'))setSceneHeight();});
+})();
+</script>
+</body>
+</html>
