@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Dragon Dash — Darkstalker</title>
+
+  <style>
+    /* ── Reset & full-screen layout ─────────────────────────────────────────── */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #111;
+      overflow: hidden;       /* no scrollbars */
+      touch-action: none;     /* we handle all touch ourselves */
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: sans-serif;
+    }
+
+    /* The game canvas fills the screen while keeping its aspect ratio */
+    #gameCanvas { display: block; touch-action: none; }
+
+    /* ── Name-entry text boxes (HTML overlay on top of canvas) ──────────────── */
+    /* These are real <input> elements so the iPad keyboard appears automatically */
+    #nameInputs {
+      position: absolute;
+      display: none;            /* hidden except on title screen */
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      z-index: 20;
+      pointer-events: all;
+    }
+    #nameInputs input {
+      width: 220px; padding: 8px 12px;
+      border-radius: 8px; border: 2px solid #aa5500;
+      background: rgba(20,8,0,0.85);
+      color: #fff; font-size: 15px; text-align: center;
+      outline: none;
+    }
+    #nameInputs input:focus     { border-color: #ff8844; }
+    #nameInputs input::placeholder { color: #886644; }
+
+    /* ── HUD (score bar at the top, always visible during play) ─────────────── */
+    #hud {
+      display: flex; justify-content: space-between;
+      width: 100%; padding: 6px 12px;
+      color: #aaa; font-size: 15px;
+      position: absolute; top: 0; left: 0;
+      pointer-events: none;   /* clicks pass through to the canvas */
+      z-index: 10;
+    }
+    #hud strong { color: #fff; }
+
+    /* ── Hint bar at the very bottom ────────────────────────────────────────── */
+    #hint {
+      color: #555; font-size: 11px; text-align: center;
+      position: absolute; bottom: 4px; left: 0; width: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- HUD elements — updated by JavaScript during play -->
+  <div id="hud">
+    <span id="hudPlayer">Score: <strong id="score">0</strong></span>
+    <span>🍕 <strong id="pizzacount">0</strong></span>
+    <span>Best: <strong id="highscore">0</strong></span>
+  </div>
+
+  <!-- The game is drawn entirely on this canvas element -->
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- Name-entry inputs injected here by buildNameInputs() -->
+  <div id="nameInputs"></div>
+
+  <!-- Hint text shown below the canvas -->
+  <p id="hint">Drag to fly • Eat 🍕 • Avoid anchovy pizza • Don't touch lava!</p>
+
+
+<script>
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 1 — SETUP & CONSTANTS
+// This section grabs the canvas, sets its size, and defines all the fixed values
+// (numbers that never change) used throughout the game.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const canvas       = document.getElementById('gameCanvas');
+const ctx          = canvas.getContext('2d');   // "ctx" is our drawing tool
+const nameInputsEl = document.getElementById('nameInputs');
+
+// Always draw at 600×400 internally, then scale to fit the real screen.
+// This means the game looks identical on every device — iPad, phone, laptop.
+const W        = 600;    // canvas width in game pixels
+const H        = 400;    // canvas height in game pixels
+const LAVA_TOP = H - 60; // y-coordinate where the lava surface starts
+
+// Keep the canvas filling the screen whenever the window is resized
+function resize() {
+  const aspect = W / H; // 600/400 = 1.5 (wider than tall)
+  let w = window.innerWidth;
+  let h = window.innerHeight;
+
+  // Shrink whichever dimension would make the canvas too wide or too tall
+  if (w / h > aspect) { w = h * aspect; } else { h = w / aspect; }
+
+  canvas.width  = W;
+  canvas.height = H;
+  canvas.style.width  = Math.floor(w) + 'px';
+  canvas.style.height = Math.floor(h) + 'px';
+
+  // Reposition the HTML name-input boxes over the canvas (they're separate HTML elements)
+  const scaleY    = Math.floor(h) / H;
+  const canvasTop = canvas.getBoundingClientRect
+    ? canvas.getBoundingClientRect().top
+    : (window.innerHeight - Math.floor(h)) / 2;
+  nameInputsEl.style.left   = '0px';
+  nameInputsEl.style.width  = '100%';
+  nameInputsEl.style.top    = (canvasTop + 310 * scaleY) + 'px'; // appears below player-count buttons
+}
+resize();
+window.addEventListener('resize', resize);
+
+
+// ── Ranks (levels) ────────────────────────────────────────────────────────────
+// Every 10 good pizzas eaten advances Darkstalker to the next rank.
+// 'at' = number of pizzas needed to reach this rank.
+// 'color' = the colour used for that rank's name on screen.
+const PIZZAS_PER_LEVEL = 10;
+const RANKS = [
+  { at:  0, title: 'Dragonet',    color: '#88ccff' },
+  { at: 10, title: 'Winglet',     color: '#aaffaa' },
+  { at: 20, title: 'Warrior',     color: '#ffdd55' },
+  { at: 30, title: 'Talon',       color: '#ffaa22' },
+  { at: 40, title: 'Darkstalker', color: '#cc88ff' },
+  { at: 50, title: 'Animus',      color: '#ff6688' },
+  { at: 60, title: 'Legend',      color: '#ffffff' },
+];
+
+// One colour per player slot, used for names and UI highlights
+const PLAYER_COLORS  = ['#6ec6ff', '#88ffaa', '#ffd966', '#ff8877'];
+const DEFAULT_NAMES  = ['Player 1', 'Player 2', 'Player 3', 'Player 4'];
+
+// Fireball shapes — chosen randomly when a fireball spawns
+const FIREBALL_SHAPES = ['round', 'streak', 'blob', 'spiky'];
+
+// How often pizzas appear and how long they stay before disappearing
+const PIZZA_SPAWN_INTERVAL = 2.0;  // seconds between pizza spawns (randomised ±50%)
+const PIZZA_LIFETIME       = 3.0;  // seconds a pizza stays on screen before fading out
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 2 — GAME STATE
+// These are all the variables that track what's happening right now in the game.
+// Unlike constants, these change constantly as the game runs.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Which screen is showing ───────────────────────────────────────────────────
+// The game is always in one of four "screens". The main loop checks this every
+// frame and decides what to draw and what inputs to accept.
+let screen = 'title'; // 'title' | 'playing' | 'turnover' | 'leaderboard'
+
+// ── Multiplayer session ───────────────────────────────────────────────────────
+let numPlayers      = 1;            // how many players in this session (1–4)
+let currentPlayer   = 0;            // which player's turn it is (0-indexed)
+let playerNames     = DEFAULT_NAMES.slice(); // copy of names so we can edit them
+let titlePlayerCount = 1;           // the number selected on the title screen
+let titlePulse      = 0;            // a timer used to make buttons pulse gently
+let nameInputRefs   = [];           // references to the live HTML <input> elements
+
+// ── Player registry (name-keyed scores) ──────────────────────────────────────
+// Scores are stored by player NAME, not by slot number.
+// This means Ben is always Ben even if he plays in slot 1 one game and slot 2 the next.
+// Format: { "Ben": { best: 24, rankBest: 2, history: [{score:24,rank:2}, ...] } }
+let registry = {};
+
+// Helper: get (or create) a player's registry entry
+function getEntry(name) {
+  if (!registry[name]) registry[name] = { best: 0, rankBest: 0, history: [] };
+  return registry[name];
+}
+
+// Add a completed run to a player's record and update their best if needed
+function recordRun(name, score, rankIdx) {
+  const entry = getEntry(name);
+  entry.history.push({ score, rank: rankIdx });
+  if (score > entry.best) { entry.best = score; entry.rankBest = rankIdx; }
+}
+
+// Quick lookups used by the HUD and leaderboard
+function getBest(name)     { return getEntry(name).best; }
+function getHistory(name)  { return getEntry(name).history; }
+
+// ── Active game variables ─────────────────────────────────────────────────────
+let t           = 0;       // time in seconds since the current turn began — used for animations
+let score       = 0;       // displayed score (same as pizzaCount but can be reduced by anchovies)
+let gameOver    = false;   // true the moment the player dies (before the turn-over screen appears)
+let deathReason = '';      // 'fireball' or 'lava' — used to pick the death message
+
+// pizzaCount  = the visible score. Goes up on good pizza, DOWN on anchovy.
+// pizzaEaten  = total good pizzas eaten this turn. NEVER goes down.
+//               This is what drives rank-up progress so anchovies can't de-level you.
+let pizzaCount    = 0;
+let pizzaEaten    = 0;
+let currentRankIdx = 0;    // index into the RANKS array for this player's current rank
+
+// levelUpBanner: when not null, shows the "RANK UP!" slide-in notification
+// Format: { title: 'Warrior', color: '#ffdd55', timer: 0 }
+let levelUpBanner = null;
+
+// flapTimer counts down between wing-flap sounds so they don't overlap
+let flapTimer     = 0;
+const FLAP_INTERVAL = 0.22; // seconds between flap sounds
+
+// Fireballs, pizzas, and anchovy pizzas — each is an array of objects
+let fireballs       = [];
+let pizzas          = [];
+let pizzaSpawnTimer = 0;
+let anchovies       = [];
+let anchovySpawnTimer = 3.5; // anchovies start appearing 3.5s into each turn
+
+// The dragon — position, speed, and hitbox size
+const dragon = { x: W/2, y: H/2, speed: 4, size: 22 };
+
+// Touch drag — we track where the finger is so the dragon smoothly follows it
+let touchActive  = false;
+let touchTargetX = W/2;
+let touchTargetY = H/2;
+
+// Keyboard keys currently held down
+const keys = {};
+
+// Difficulty goes from 0 (Dragonet) to 1 (Legend) based purely on rank.
+// Higher difficulty = more fireballs, bigger, faster.
+function getDifficulty() {
+  return Math.min(currentRankIdx / (RANKS.length - 1), 1);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 3 — CAVE THEMES
+// Each rank has its own cavern look. As Darkstalker levels up, the cave
+// gradually changes — from a cold dark dungeon all the way to golden daylight
+// at the exit. The transition is a smooth colour crossfade.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Each theme defines:
+//   bg   = base background colour
+//   amb  = ambient light colour (the glow that fills the cave)
+//   wall = ceiling and side-wall colour
+//   rock = rock formation colour
+//   fog  = a subtle colour tint overlaid on the whole play area
+//   glow = the colour of Darkstalker's outline glow (so he's always visible)
+const CAVE_THEMES = [
+  // Rank 0 — Dragonet: deep dungeon, cold purple stone
+  { bg:'#1a0e1a', amb:'rgba(100,0,180,0.25)',  wall:'#251230', rock:'#1e0e28', fog:'rgba(80,0,120,0.08)',   glow:'#aa66ff' },
+  // Rank 1 — Winglet: lava tunnels, smoke and orange heat
+  { bg:'#3d1a05', amb:'rgba(255,80,0,0.40)',   wall:'#2e1205', rock:'#3a1a08', fog:'rgba(200,50,0,0.10)',   glow:'#ff8844' },
+  // Rank 2 — Warrior: magma chamber, deep molten orange
+  { bg:'#4a1800', amb:'rgba(255,120,0,0.45)',  wall:'#3a1000', rock:'#4a1800', fog:'rgba(255,80,0,0.12)',   glow:'#ffaa44' },
+  // Rank 3 — Talon: crystal caves, cool teal and cyan sparkles
+  { bg:'#0d1a2a', amb:'rgba(80,180,200,0.30)', wall:'#0a1520', rock:'#102030', fog:'rgba(60,160,180,0.10)', glow:'#44ddff' },
+  // Rank 4 — Darkstalker: underground river, deep blue
+  { bg:'#05101e', amb:'rgba(30,80,180,0.35)',  wall:'#040c18', rock:'#081020', fog:'rgba(20,60,140,0.12)',  glow:'#5599ff' },
+  // Rank 5 — Animus: near the surface, mossy green light filtering down
+  { bg:'#0a1a0a', amb:'rgba(60,180,60,0.30)',  wall:'#081408', rock:'#0c1e0a', fog:'rgba(40,160,40,0.10)',  glow:'#66ff88' },
+  // Rank 6 — Legend: the exit! Warm golden daylight breaking through
+  { bg:'#2a1e00', amb:'rgba(255,220,80,0.45)', wall:'#1e1600', rock:'#2a1e04', fog:'rgba(255,200,50,0.15)', glow:'#ffee44' },
+];
+
+// Track the crossfade between the previous cave and the new one
+let cavePrev  = 0;   // index of the cave we're fading FROM
+let caveCurr  = 0;   // index of the cave we're fading TO
+let caveBlend = 1;   // 0 = fully previous, 1 = fully current
+
+// Called when a rank-up happens — starts the cave transition
+function triggerCaveTransition(newLevel) {
+  cavePrev  = caveCurr;
+  caveCurr  = newLevel;
+  caveBlend = 0; // start at 0 and tick toward 1 each frame
+}
+
+// Returns the current blended cave theme (lerping between prev and curr)
+function getCaveTheme() {
+  if (caveBlend >= 1 || cavePrev === caveCurr) return CAVE_THEMES[caveCurr];
+  const a = CAVE_THEMES[cavePrev], b = CAVE_THEMES[caveCurr], f = caveBlend;
+  return {
+    bg:   lerpColor(a.bg,   b.bg,   f),
+    amb:  b.amb,
+    wall: lerpColor(a.wall, b.wall, f),
+    rock: lerpColor(a.rock, b.rock, f),
+    fog:  b.fog,
+    glow: lerpColor(a.glow, b.glow, f),
+  };
+}
+
+// Smoothly blend two hex colours. t=0 returns c1, t=1 returns c2.
+function lerpColor(c1, c2, t) {
+  const hex = n => parseInt(n, 16);
+  const r1 = hex(c1.slice(1,3)), g1 = hex(c1.slice(3,5)), b1 = hex(c1.slice(5,7));
+  const r2 = hex(c2.slice(1,3)), g2 = hex(c2.slice(3,5)), b2 = hex(c2.slice(5,7));
+  const r = Math.round(r1 + (r2-r1)*t);
+  const g = Math.round(g1 + (g2-g1)*t);
+  const b = Math.round(b1 + (b2-b1)*t);
+  return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 4 — AUDIO
+// All sounds are generated in real time using the Web Audio API — no sound files
+// needed! We create oscillators (tone generators) and noise buffers and shape
+// their volume over time using "gain envelopes".
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// AC = AudioContext — the browser's sound engine
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+
+// Browsers block audio until the user interacts. This un-suspends it.
+function resume() { if (AC.state === 'suspended') AC.resume(); }
+
+// ── Sound effects ─────────────────────────────────────────────────────────────
+
+// Big fireball whoosh — a noise burst filtered to a sweeping bandpass tone
+function playWhoosh() {
+  resume();
+  const dur = 0.55;
+  // Create a buffer of random noise (like TV static)
+  const buf = AC.createBuffer(1, AC.sampleRate * dur, AC.sampleRate);
+  const d   = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1);
+
+  const src  = AC.createBufferSource(); src.buffer = buf;
+  // Bandpass filter sweeps the noise from a high pitch down to a low rumble
+  const filt = AC.createBiquadFilter(); filt.type = 'bandpass';
+  filt.frequency.setValueAtTime(2400, AC.currentTime);
+  filt.frequency.exponentialRampToValueAtTime(600, AC.currentTime + dur);
+  filt.Q.value = 8;
+  // A sine wave underneath adds a "whooom" tone
+  const osc = AC.createOscillator(); osc.type = 'sine';
+  osc.frequency.setValueAtTime(900, AC.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(280, AC.currentTime + dur);
+  const og = AC.createGain();
+  og.gain.setValueAtTime(0.12, AC.currentTime);
+  og.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + dur);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.45, AC.currentTime + 0.04);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + dur);
+  src.connect(filt); filt.connect(g); g.connect(AC.destination);
+  osc.connect(og); og.connect(AC.destination);
+  src.start(); src.stop(AC.currentTime + dur);
+  osc.start(); osc.stop(AC.currentTime + dur);
+}
+
+// Wing flap — two quick low thumps (one for each wing)
+function playFlap() {
+  resume();
+  for (let f = 0; f < 2; f++) {
+    const delay = f * 0.11, dur = 0.14;
+    const buf = AC.createBuffer(1, AC.sampleRate * dur, AC.sampleRate);
+    const d   = buf.getChannelData(0);
+    // Noise that fades out quickly = a "thump"
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i/d.length, 2);
+    const src  = AC.createBufferSource(); src.buffer = buf;
+    const filt = AC.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 320; filt.Q.value = 2;
+    const g    = AC.createGain();
+    g.gain.setValueAtTime(0.0001, AC.currentTime + delay);
+    g.gain.exponentialRampToValueAtTime(0.35, AC.currentTime + delay + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + delay + dur);
+    src.connect(filt); filt.connect(g); g.connect(AC.destination);
+    src.start(AC.currentTime + delay); src.stop(AC.currentTime + delay + dur);
+  }
+}
+
+// Death by fireball — a sawtooth wave (harsh tone) that falls to a growl
+function playDeath() {
+  resume();
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.connect(g); g.connect(AC.destination); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(300, AC.currentTime);
+  o.frequency.exponentialRampToValueAtTime(40, AC.currentTime + 0.7);
+  g.gain.setValueAtTime(0.15, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.7);
+  o.start(); o.stop(AC.currentTime + 0.7);
+}
+
+// Death by lava — deeper, slower, more ominous than fireball death
+function playLavaDeath() {
+  resume();
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.connect(g); g.connect(AC.destination); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(90, AC.currentTime);
+  o.frequency.exponentialRampToValueAtTime(28, AC.currentTime + 0.6);
+  g.gain.setValueAtTime(0.2, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.6);
+  o.start(); o.stop(AC.currentTime + 0.6);
+}
+
+// Level-up fanfare — four ascending sine tones played in quick succession
+function playLevelUp() {
+  resume();
+  [520, 660, 780, 1040].forEach((freq, i) => {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination); o.type = 'sine'; o.frequency.value = freq;
+    const s = AC.currentTime + i * 0.1;
+    g.gain.setValueAtTime(0.0001, s);
+    g.gain.exponentialRampToValueAtTime(0.18, s + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, s + 0.18);
+    o.start(s); o.stop(s + 0.2);
+  });
+}
+
+// Good pizza eaten — three cheerful ascending tones ("nom!")
+function playEatPizza() {
+  resume();
+  [440, 550, 660].forEach((freq, i) => {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination); o.type = 'sine'; o.frequency.value = freq;
+    const s = AC.currentTime + i * 0.045;
+    g.gain.setValueAtTime(0.0001, s);
+    g.gain.exponentialRampToValueAtTime(0.11, s + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, s + 0.09);
+    o.start(s); o.stop(s + 0.12);
+  });
+}
+
+// Anchovy pizza eaten — three descending sawtooth tones ("yuck!")
+function playEatAnchovy() {
+  resume();
+  [300, 220, 160].forEach((freq, i) => {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination); o.type = 'sawtooth'; o.frequency.value = freq;
+    const s = AC.currentTime + i * 0.07;
+    g.gain.setValueAtTime(0.0001, s);
+    g.gain.exponentialRampToValueAtTime(0.09, s + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, s + 0.12);
+    o.start(s); o.stop(s + 0.14);
+  });
+}
+
+// ── Background music ──────────────────────────────────────────────────────────
+// The music is four layered tracks all generated procedurally:
+//   1. Deep drone  — two slightly detuned sawtooth oscillators, very low
+//   2. Bass pulse  — a low sine "thump" every 1.6 seconds
+//   3. Chord stabs — slow minor/diminished chords every 3.2 seconds
+//   4. Melody      — a haunting pentatonic minor phrase that loops
+// All four are connected to one master gain node so we can fade everything out.
+
+let musicNodes   = [];   // we keep track of every node so we can stop them all
+let musicStarted = false;
+
+// Root frequency for the music — B1 on a piano (very low)
+const DRONE_FREQ = 61.74;
+
+function startMusic() {
+  if (musicStarted) return; // don't start twice
+  musicStarted = true;
+  resume();
+
+  // Master volume — starts at 0 and fades in over 3 seconds
+  const masterGain = AC.createGain();
+  masterGain.gain.value = 0;
+  masterGain.gain.linearRampToValueAtTime(1, AC.currentTime + 3);
+  masterGain.connect(AC.destination);
+  musicNodes.push(masterGain);
+
+  // 1. Deep drone — two oscillators slightly out of tune create a beating effect
+  [DRONE_FREQ, DRONE_FREQ * 1.003].forEach(freq => {
+    const osc  = AC.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = freq;
+    const gain = AC.createGain(); gain.gain.value = 0.08;
+    const filt = AC.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 180; filt.Q.value = 1.5;
+    osc.connect(filt); filt.connect(gain); gain.connect(masterGain);
+    osc.start();
+    musicNodes.push(osc, gain, filt);
+  });
+
+  // 2. Bass pulse — schedules itself recursively every 1.62 seconds
+  function schedulePulse(when) {
+    if (!musicStarted) return;
+    const osc  = AC.createOscillator(); osc.type = 'sine'; osc.frequency.value = DRONE_FREQ * 0.5;
+    const gain = AC.createGain();
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.linearRampToValueAtTime(0.28, when + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, when + 0.55);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(when); osc.stop(when + 0.6);
+    setTimeout(() => schedulePulse(AC.currentTime + 1.62),
+      Math.max(0, (when - AC.currentTime + 1.62) * 1000 - 50));
+  }
+  schedulePulse(AC.currentTime + 0.1);
+
+  // 3. Chord stabs — four chord shapes cycling every 3.2 seconds
+  // Each chord is defined as frequency ratios relative to DRONE_FREQ
+  const CHORD_SETS = [
+    [1, 1.189, 1.498],     // B minor   (root, minor 3rd, 5th)
+    [1, 1.122, 1.335],     // B dim     (root, minor 3rd, diminished 5th)
+    [0.891, 1.122, 1.335], // G# minor voicing
+    [1, 1.189, 1.782],     // B minor add 7
+  ];
+  let chordIndex = 0;
+  function scheduleChord(when) {
+    if (!musicStarted) return;
+    CHORD_SETS[chordIndex % CHORD_SETS.length].forEach(ratio => {
+      const osc  = AC.createOscillator(); osc.type = 'triangle'; osc.frequency.value = DRONE_FREQ * ratio * 2;
+      const gain = AC.createGain();
+      gain.gain.setValueAtTime(0.0001, when);
+      gain.gain.linearRampToValueAtTime(0.055, when + 0.18);
+      gain.gain.exponentialRampToValueAtTime(0.012, when + 1.4);
+      gain.gain.exponentialRampToValueAtTime(0.001, when + 2.8);
+      const filt = AC.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 900;
+      osc.connect(filt); filt.connect(gain); gain.connect(masterGain);
+      osc.start(when); osc.stop(when + 3);
+    });
+    chordIndex++;
+    setTimeout(() => scheduleChord(AC.currentTime + 3.2),
+      Math.max(0, (when - AC.currentTime + 3.2) * 1000 - 60));
+  }
+  scheduleChord(AC.currentTime + 1.2);
+
+  // 4. Melody — a 16-note pentatonic minor phrase (B, C#, D, F#, G# across two octaves)
+  const MELODY_NOTES = [123.47,138.59,146.83,185,207.65,246.94,277.18,293.66,
+                        246.94,207.65,185,146.83,138.59,123.47,123.47,92.5];
+  const NOTE_DUR = 0.85; // seconds per note
+  let melodyIndex = 0;
+  function scheduleMelodyNote(when) {
+    if (!musicStarted) return;
+    const osc  = AC.createOscillator(); osc.type = 'sine';
+    osc.frequency.value = MELODY_NOTES[melodyIndex % MELODY_NOTES.length];
+    melodyIndex++;
+    const gain = AC.createGain();
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.linearRampToValueAtTime(0.04, when + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.018, when + NOTE_DUR * 0.6);
+    gain.gain.exponentialRampToValueAtTime(0.001, when + NOTE_DUR * 0.95);
+    const filt = AC.createBiquadFilter(); filt.type = 'highpass'; filt.frequency.value = 200;
+    osc.connect(filt); filt.connect(gain); gain.connect(masterGain);
+    osc.start(when); osc.stop(when + NOTE_DUR);
+    setTimeout(() => scheduleMelodyNote(AC.currentTime + NOTE_DUR),
+      Math.max(0, (when - AC.currentTime + NOTE_DUR) * 1000 - 40));
+  }
+  scheduleMelodyNote(AC.currentTime + 2.5);
+
+  // 5. High shimmer — a gentle tremolo pad at the top of the frequency range
+  const shimOsc  = AC.createOscillator(); shimOsc.type = 'sine'; shimOsc.frequency.value = DRONE_FREQ * 8;
+  const shimLFO  = AC.createOscillator(); shimLFO.type = 'sine'; shimLFO.frequency.value = 0.3; // very slow wobble
+  const shimLFOG = AC.createGain(); shimLFOG.gain.value = 0.012;
+  const shimGain = AC.createGain(); shimGain.gain.value = 0.018;
+  shimLFO.connect(shimLFOG); shimLFOG.connect(shimGain.gain); // LFO modulates the shimmer volume
+  shimOsc.connect(shimGain); shimGain.connect(masterGain);
+  shimOsc.start(); shimLFO.start();
+  musicNodes.push(shimOsc, shimLFO, shimLFOG, shimGain);
+}
+
+function stopMusic() {
+  if (!musicStarted) return;
+  musicStarted = false;
+  // Fade the master gain to silence, then kill all the audio nodes
+  const mg = musicNodes[0];
+  if (mg && mg.gain) {
+    mg.gain.cancelScheduledValues(AC.currentTime);
+    mg.gain.setValueAtTime(mg.gain.value, AC.currentTime);
+    mg.gain.linearRampToValueAtTime(0.0001, AC.currentTime + 1.0);
+  }
+  setTimeout(() => {
+    musicNodes.forEach(n => { try { if (n.stop) n.stop(); if (n.disconnect) n.disconnect(); } catch(e) {} });
+    musicNodes = [];
+    musicStarted = false;
+  }, 1200);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 5 — SPAWNING GAME OBJECTS
+// These functions create new fireballs, pizzas, and anchovy pizzas.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Create a new fireball. Size and speed increase with the current difficulty.
+// Fireballs enter from a random edge of the screen (left, right, top, or bottom).
+function spawnFireball() {
+  const d     = getDifficulty();
+  const size  = (9 + d*12) + Math.random() * (9 + d*12); // bigger at higher levels
+  const speed = (1.6 + d*2.8) + Math.random() * (1 + d*2); // faster at higher levels
+  const shape = FIREBALL_SHAPES[Math.floor(Math.random() * FIREBALL_SHAPES.length)];
+  const wobble = (Math.random() * 2 - 1) * 0.8; // slight sideways drift
+  const side  = Math.floor(Math.random() * 4);   // 0=left, 1=right, 2=top, 3=bottom
+
+  let x, y, vx, vy;
+  if      (side === 0) { x = -size;    y = 40 + Math.random() * (LAVA_TOP-80); vx = speed;  vy = wobble; } // from left
+  else if (side === 1) { x = W + size; y = 40 + Math.random() * (LAVA_TOP-80); vx = -speed; vy = wobble; } // from right
+  else if (side === 2) { x = 40 + Math.random() * (W-80); y = -size;          vx = wobble; vy = speed;  } // from top
+  else                 { x = 40 + Math.random() * (W-80); y = LAVA_TOP-size*2; vx = wobble; vy = -speed; } // from bottom
+
+  // Big fireballs get a whoosh sound when they spawn
+  if (size > 28) setTimeout(() => { if (!gameOver) playWhoosh(); }, 0);
+
+  return { x, y, vx, vy, size, shape, phase: Math.random() * Math.PI * 2, trail: [] };
+}
+
+// Create a pizza at a random position. Tries to avoid spawning right on top of the dragon.
+function spawnPizza() {
+  const margin = 50;
+  let x, y, attempts = 0;
+  do {
+    x = margin + Math.random() * (W - margin * 2);
+    y = margin + Math.random() * (LAVA_TOP - margin * 2);
+    attempts++;
+  } while (attempts < 20 && Math.hypot(x - dragon.x, y - dragon.y) < 100);
+  return { x, y, life: PIZZA_LIFETIME, maxLife: PIZZA_LIFETIME, popping: false, popTimer: 0 };
+}
+
+// Anchovy pizza — identical spawn logic, different object (drawn and handled differently)
+function spawnAnchovy() {
+  const margin = 50;
+  let x, y, attempts = 0;
+  do {
+    x = margin + Math.random() * (W - margin * 2);
+    y = margin + Math.random() * (LAVA_TOP - margin * 2);
+    attempts++;
+  } while (attempts < 20 && Math.hypot(x - dragon.x, y - dragon.y) < 100);
+  return { x, y, life: PIZZA_LIFETIME, maxLife: PIZZA_LIFETIME, popping: false, popTimer: 0 };
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 6 — DRAWING
+// Every frame, the main loop calls these functions to paint the screen.
+// Canvas drawing works like painting on paper — shapes drawn later appear on top.
+// ctx.save() / ctx.restore() let us apply temporary transforms (move, scale, rotate)
+// without affecting everything else.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Cave background ───────────────────────────────────────────────────────────
+function drawBackground() {
+  // Advance the cave crossfade a little each frame
+  if (caveBlend < 1 && cavePrev !== caveCurr) caveBlend = Math.min(1, caveBlend + 0.008);
+  const cv = getCaveTheme();
+
+  // Base colour fill
+  ctx.fillStyle = cv.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Ambient light glow — a radial gradient rising from the lava
+  const ag = ctx.createRadialGradient(W/2, H, 0, W/2, H, H);
+  const [ar,ag_,ab] = cv.amb.replace('rgba(','').replace(')','').split(',');
+  ag.addColorStop(0,   `rgba(${ar},${ag_},${ab},0.45)`);
+  ag.addColorStop(0.5, `rgba(${ar},${ag_},${ab},0.18)`);
+  ag.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = ag;
+  ctx.fillRect(0, 0, W, H);
+
+  // Jagged ceiling (stalactites drawn as a wavy shape across the top)
+  ctx.fillStyle = cv.wall;
+  ctx.beginPath(); ctx.moveTo(0, 0);
+  for (let x = 0; x <= W; x += 20) ctx.lineTo(x, 20 + Math.sin(x * 0.05) * 15);
+  ctx.lineTo(W, 0); ctx.closePath(); ctx.fill();
+
+  // Light effects — at high ranks, daylight shafts appear from above
+  if (currentRankIdx >= 5) {
+    ctx.globalAlpha = 0.18 + Math.sin(t * 0.8) * 0.06;
+    ctx.strokeStyle = currentRankIdx === 6 ? 'rgba(255,220,80,1)' : 'rgba(80,200,80,1)';
+    ctx.lineWidth = 18; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath(); ctx.moveTo(100 + i*180, 0); ctx.lineTo(80 + i*190, LAVA_TOP-40); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  } else {
+    // Lower ranks: cracks in the ceiling with a hint of heat or crystal light
+    ctx.strokeStyle = currentRankIdx >= 3 ? 'rgba(80,200,220,0.5)' : '#ff6600';
+    ctx.lineWidth = 1.5; ctx.globalAlpha = 0.6;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(80 + i*130, 0); ctx.lineTo(100 + i*130, 30); ctx.lineTo(90 + i*130, 55);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Side walls (triangular rocky shapes on left and right edges)
+  ctx.fillStyle = cv.wall;
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(60,0); ctx.lineTo(40,80); ctx.lineTo(20,160); ctx.lineTo(0,200); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(W,0); ctx.lineTo(W-60,0); ctx.lineTo(W-40,80); ctx.lineTo(W-20,160); ctx.lineTo(W,200); ctx.fill();
+
+  // Rock formations along the bottom (sharp mountain shapes just above the lava)
+  ctx.fillStyle = cv.rock;
+  for (const [fx,fy,fw] of [[30,260,80],[140,280,60],[260,255,90],[390,270,70],[490,260,85]]) {
+    ctx.beginPath();
+    ctx.moveTo(fx, H-50); ctx.lineTo(fx+fw*0.2, fy+10); ctx.lineTo(fx+fw*0.4, fy);
+    ctx.lineTo(fx+fw*0.6, fy+8); ctx.lineTo(fx+fw*0.8, fy-5); ctx.lineTo(fx+fw, H-50);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Crystal sparkles appear at rank 3+ (teal/green/gold depending on rank)
+  if (currentRankIdx >= 3) {
+    ctx.globalAlpha = 0.5 + Math.sin(t * 3) * 0.3;
+    ctx.fillStyle = currentRankIdx >= 5 ? '#aaffaa' : currentRankIdx >= 4 ? '#aaddff' : '#88eeff';
+    [[50,265],[160,272],[280,258],[420,262],[510,255]].forEach(([cx,cy]) => {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy-6); ctx.lineTo(cx+2, cy); ctx.lineTo(cx, cy+6); ctx.lineTo(cx-2, cy);
+      ctx.closePath(); ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // Lava — drawn as four overlapping wavy coloured stripes that animate over time
+  const lavaGradient = ctx.createLinearGradient(0, LAVA_TOP-80, 0, LAVA_TOP);
+  lavaGradient.addColorStop(0, 'rgba(255,80,0,0)');
+  lavaGradient.addColorStop(1, 'rgba(255,80,0,0.5)');
+  ctx.fillStyle = lavaGradient; ctx.fillRect(0, LAVA_TOP-80, W, 80);
+  ctx.fillStyle = '#8b1a00';    ctx.fillRect(0, LAVA_TOP+10, W, H);
+
+  for (const [col, offset, amp] of [['#e63000',0,11],['#ff4400',8,11],['#ff7700',18,9],['#ffaa00',30,8]]) {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, LAVA_TOP + offset);
+    for (let x = 0; x <= W; x += 8) {
+      ctx.lineTo(x, LAVA_TOP + offset + Math.sin(x*0.04 + t*2.5)*amp*0.6 + Math.sin(x*0.08 - t*1.8)*amp*0.4);
+    }
+    ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+  }
+
+  // Red warning flash when the dragon gets too close to the lava
+  if (dragon.y > LAVA_TOP - 55 && screen === 'playing') {
+    ctx.fillStyle = `rgba(255,0,0,${0.07 + Math.sin(t*10)*0.04})`;
+    ctx.fillRect(0, LAVA_TOP-55, W, 55);
+  }
+
+  // Glowing lava bubbles
+  for (let i = 0; i < 6; i++) {
+    const bx = ((i*113 + t*25) % (W-40)) + 20;
+    const by = LAVA_TOP + 20 + Math.sin(t*2.5 + i*1.2) * 10;
+    const br = 8 + Math.sin(t*3 + i) * 4;
+    ctx.fillStyle = '#ff6600'; ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ffcc00'; ctx.beginPath(); ctx.arc(bx-br*0.3, by-br*0.3, br*0.45, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Embers floating upward from the lava surface
+  for (let i = 0; i < 12; i++) {
+    const progress = (t*1.5 + i*0.7) % 1; // 0→1 cycle
+    ctx.globalAlpha = 1 - progress;
+    ctx.fillStyle = i%3===0 ? '#ffee00' : i%3===1 ? '#ff6600' : '#ff3300';
+    ctx.beginPath(); ctx.arc((i*67 + t*60) % W, LAVA_TOP - progress*50, 2.5, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Atmospheric fog tint (a semi-transparent colour wash specific to each cave)
+  if (cv.fog) { ctx.fillStyle = cv.fog; ctx.fillRect(0, 0, W, LAVA_TOP); }
+}
+
+// ── Fireballs ─────────────────────────────────────────────────────────────────
+// Each fireball has one of four shapes: round, streak (elongated), blob (wobbly),
+// or spiky (star shape). All use radial or linear gradients for a glowing effect.
+function drawFireball(fb) {
+  const { x, y, size, shape, phase } = fb;
+  const flicker = Math.sin(t*12 + phase) * 0.15; // small size oscillation for a "live fire" look
+
+  // Draw the motion trail (a fading series of circles behind the fireball)
+  for (let i = 0; i < fb.trail.length; i++) {
+    ctx.globalAlpha = (i / fb.trail.length) * 0.3;
+    ctx.fillStyle = '#ff4400';
+    ctx.beginPath(); ctx.arc(fb.trail[i].x, fb.trail[i].y, size*(i/fb.trail.length)*0.65, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.save(); ctx.translate(x, y);
+
+  if (shape === 'round') {
+    // Simple glowing circle with a white-hot centre
+    const g = ctx.createRadialGradient(0,0,0, 0,0,size);
+    g.addColorStop(0, '#fff8aa'); g.addColorStop(0.3, '#ffcc00');
+    g.addColorStop(0.65, '#ff4400'); g.addColorStop(1, 'rgba(200,0,0,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0,0, size*(1+flicker), 0, Math.PI*2); ctx.fill();
+
+  } else if (shape === 'streak') {
+    // Elongated ellipse pointing in the direction of travel
+    ctx.rotate(Math.atan2(fb.vy, fb.vx));
+    const g = ctx.createLinearGradient(-size*2.5, 0, size, 0);
+    g.addColorStop(0, 'rgba(255,200,0,0)'); g.addColorStop(0.4, '#ff6600');
+    g.addColorStop(0.85, '#ffee00'); g.addColorStop(1, '#ffffff');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(0,0, size*2.5, size*0.6*(1+flicker*0.3), 0, 0, Math.PI*2); ctx.fill();
+
+  } else if (shape === 'blob') {
+    // Organic wobbly shape using a sine wave to vary the radius
+    ctx.beginPath();
+    for (let i = 0; i <= 8; i++) {
+      const a = (i/8) * Math.PI*2;
+      const r = size * (0.75 + 0.35 * Math.sin(a*3 + t*5 + phase));
+      i === 0 ? ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r) : ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+    }
+    ctx.closePath();
+    const g = ctx.createRadialGradient(0,0,0, 0,0,size);
+    g.addColorStop(0, '#ffff88'); g.addColorStop(0.4, '#ff8800'); g.addColorStop(1, 'rgba(180,0,0,0)');
+    ctx.fillStyle = g; ctx.fill();
+
+  } else { // spiky — a rotating star shape
+    ctx.beginPath();
+    for (let i = 0; i < 14; i++) {
+      const a = (i/7) * Math.PI + t*2; // rotates over time
+      const r = i%2===0 ? size*(1+flicker*0.2) : size*0.45; // alternate long/short points
+      i === 0 ? ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r) : ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+    }
+    ctx.closePath();
+    const g = ctx.createRadialGradient(0,0,0, 0,0,size);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.25, '#ffee00');
+    g.addColorStop(0.7, '#ff3300'); g.addColorStop(1, 'rgba(150,0,0,0)');
+    ctx.fillStyle = g; ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── Good pizza ────────────────────────────────────────────────────────────────
+// Drawn as a top-down view: brown crust ring, red sauce, yellow cheese, red pepperoni dots.
+// Fades in over the first 10% of its life, fades out over the last 20%.
+// When eaten, plays a "pop" scale-out animation.
+function drawPizza(pz) {
+  const lifeRatio = pz.life / pz.maxLife;
+  let alpha = lifeRatio > 0.9 ? (1 - lifeRatio) / 0.1 : lifeRatio < 0.2 ? lifeRatio / 0.2 : 1;
+  let scale = 1;
+  if (pz.popping) { scale = 1 + pz.popTimer * 3; alpha = Math.max(0, 1 - pz.popTimer * 5); }
+
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.translate(pz.x, pz.y); ctx.scale(scale, scale);
+  ctx.shadowColor = 'rgba(255,200,50,0.8)'; ctx.shadowBlur = 10;
+
+  const r = 14;
+  ctx.fillStyle = '#c87e30'; ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();           // crust
+  ctx.fillStyle = '#bb2f0f'; ctx.beginPath(); ctx.arc(0,0,r*0.82,0,Math.PI*2); ctx.fill();      // sauce
+  ctx.fillStyle = '#f0d050'; ctx.beginPath(); ctx.arc(0,0,r*0.65,0,Math.PI*2); ctx.fill();      // cheese
+  ctx.fillStyle = '#991800'; // pepperoni
+  for (const [sx,sy] of [[-4,-3],[4,-2],[-1,4],[5,3],[-5,4]]) {
+    ctx.beginPath(); ctx.arc(sx,sy,2.2,0,Math.PI*2); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(160,90,0,0.45)'; ctx.lineWidth = 0.8; // slice lines
+  for (let i = 0; i < 6; i++) {
+    const a = (i/6)*Math.PI*2;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r); ctx.stroke();
+  }
+  ctx.shadowBlur = 0; ctx.restore();
+}
+
+// ── Anchovy pizza ─────────────────────────────────────────────────────────────
+// Same shape as a regular pizza but with a greenish tint and silver anchovy strips.
+// A red ✕ floats above it as a warning not to eat it.
+function drawAnchovy(pz) {
+  const lifeRatio = pz.life / pz.maxLife;
+  let alpha = lifeRatio > 0.9 ? (1 - lifeRatio) / 0.1 : lifeRatio < 0.2 ? lifeRatio / 0.2 : 1;
+  let scale = 1;
+  if (pz.popping) { scale = 1 + pz.popTimer * 3; alpha = Math.max(0, 1 - pz.popTimer * 5); }
+
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.translate(pz.x, pz.y); ctx.scale(scale, scale);
+  ctx.shadowColor = 'rgba(80,180,80,0.7)'; ctx.shadowBlur = 10;
+
+  const r = 14;
+  ctx.fillStyle = '#7a5020'; ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();           // dark crust
+  ctx.fillStyle = '#4a6630'; ctx.beginPath(); ctx.arc(0,0,r*0.82,0,Math.PI*2); ctx.fill();      // green sauce
+  ctx.fillStyle = '#c8c088'; ctx.beginPath(); ctx.arc(0,0,r*0.65,0,Math.PI*2); ctx.fill();      // pale cheese
+  ctx.strokeStyle = '#778899'; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; // anchovy strips
+  for (const [ax,ay,bx,by] of [[-5,-4,5,4],[-5,2,2,-5],[0,-5,5,2]]) {
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(60,80,40,0.5)'; ctx.lineWidth = 0.8; // slice lines
+  for (let i = 0; i < 6; i++) {
+    const a = (i/6)*Math.PI*2;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r); ctx.stroke();
+  }
+  // Warning mark — a red ✕ floating above
+  ctx.fillStyle = 'rgba(255,80,80,0.9)'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('✕', 0, -r-4);
+  ctx.shadowBlur = 0; ctx.restore();
+}
+
+// ── Darkstalker the dragon ────────────────────────────────────────────────────
+// Darkstalker is drawn entirely from shapes — no images used!
+// He's built from top to bottom: horns, skull, neck, body, wings, tail, scales.
+// 'size' (dragon.size=22) is the base unit — all other measurements are relative to it.
+// A contrast glow (from the current cave theme) is applied to the body so he's
+// always visible regardless of the cave background colour.
+function drawDarkstalker(x, y) {
+  const s = dragon.size;
+  const glowCol = CAVE_THEMES[caveCurr].glow; // glow colour matches the current cave
+  ctx.save(); ctx.translate(x, y);
+
+  // Wing flap animation — wings rotate in opposite directions using a sine wave
+  const flapAngle = Math.sin(t * 4) * 0.12;
+
+  // ── Left wing ──
+  ctx.save(); ctx.rotate(-flapAngle);
+  ctx.fillStyle = '#0d0d0d'; ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-s*0.3,-s*0.2); ctx.lineTo(-s*1.8,-s*1.4); ctx.lineTo(-s*1.5,-s*0.3);
+  ctx.lineTo(-s*2.0,s*0.2);  ctx.lineTo(-s*1.6,s*0.5);  ctx.lineTo(-s*1.9,s*0.9);
+  ctx.lineTo(-s*1.2,s*0.7);  ctx.lineTo(-s*1.3,s*1.1);  ctx.lineTo(-s*0.7,s*0.8);
+  ctx.lineTo(-s*0.4,s*0.3);  ctx.closePath(); ctx.fill(); ctx.stroke();
+  // Wing membrane lines
+  ctx.strokeStyle = '#141414'; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(-s*0.3,-s*0.2); ctx.lineTo(-s*1.5,-s*0.3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-s*0.3,-s*0.2); ctx.lineTo(-s*1.6,s*0.5);  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-s*0.3,-s*0.2); ctx.lineTo(-s*1.2,s*0.7);  ctx.stroke();
+  // Iridescent scale shimmer on the wing
+  ctx.fillStyle = '#c8e8f0'; ctx.globalAlpha = 0.85;
+  for (let i=0; i<5; i++) { ctx.beginPath(); ctx.ellipse(-s*0.32-i*s*0.04,-s*0.15+i*s*0.1,s*0.07,s*0.04,-0.4,0,Math.PI*2); ctx.fill(); }
+  ctx.globalAlpha = 1; ctx.restore();
+
+  // ── Right wing (mirror of left) ──
+  ctx.save(); ctx.rotate(flapAngle);
+  ctx.fillStyle = '#0d0d0d'; ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(s*0.3,-s*0.2); ctx.lineTo(s*1.8,-s*1.4); ctx.lineTo(s*1.5,-s*0.3);
+  ctx.lineTo(s*2.0,s*0.2);  ctx.lineTo(s*1.6,s*0.5);  ctx.lineTo(s*1.9,s*0.9);
+  ctx.lineTo(s*1.2,s*0.7);  ctx.lineTo(s*1.3,s*1.1);  ctx.lineTo(s*0.7,s*0.8);
+  ctx.lineTo(s*0.4,s*0.3);  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#141414'; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(s*0.3,-s*0.2); ctx.lineTo(s*1.5,-s*0.3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(s*0.3,-s*0.2); ctx.lineTo(s*1.6,s*0.5);  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(s*0.3,-s*0.2); ctx.lineTo(s*1.2,s*0.7);  ctx.stroke();
+  ctx.fillStyle = '#c8e8f0'; ctx.globalAlpha = 0.85;
+  for (let i=0; i<5; i++) { ctx.beginPath(); ctx.ellipse(s*0.32+i*s*0.04,-s*0.15+i*s*0.1,s*0.07,s*0.04,0.4,0,Math.PI*2); ctx.fill(); }
+  ctx.globalAlpha = 1; ctx.restore();
+
+  // ── Neck ──
+  ctx.fillStyle = '#111111'; ctx.strokeStyle = '#1e1e1e'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-s*0.18,-s*0.3); ctx.quadraticCurveTo(-s*0.25,-s*0.9,-s*0.05,-s*1.35);
+  ctx.quadraticCurveTo(s*0.05,-s*1.35,s*0.22,-s*0.9); ctx.quadraticCurveTo(s*0.18,-s*0.3,s*0.18,-s*0.3);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+
+  // ── Body (with contrast glow so Darkstalker is always visible) ──
+  ctx.fillStyle = '#111111';
+  ctx.shadowColor = glowCol; ctx.shadowBlur = 14;
+  ctx.beginPath(); ctx.ellipse(0, s*0.15, s*0.32, s*0.58, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Body scale ridges
+  ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1.5;
+  for (let i=0; i<5; i++) {
+    const ry = -s*0.25 + i*s*0.18;
+    ctx.beginPath(); ctx.moveTo(-s*0.32,ry); ctx.quadraticCurveTo(-s*0.5,ry+s*0.05,-s*0.42,ry+s*0.12); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo( s*0.32,ry); ctx.quadraticCurveTo( s*0.5,ry+s*0.05, s*0.42,ry+s*0.12); ctx.stroke();
+  }
+
+  // ── Tail ──
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0,s*0.7); ctx.quadraticCurveTo(s*0.6,s*1.2,s*1.0,s*0.9); ctx.quadraticCurveTo(s*1.4,s*0.6,s*1.2,s*0.2); ctx.stroke();
+  ctx.lineWidth = 3; ctx.strokeStyle = '#1c1c1c';
+  ctx.beginPath(); ctx.moveTo(0,s*0.7); ctx.quadraticCurveTo(s*0.6,s*1.2,s*1.0,s*0.9); ctx.quadraticCurveTo(s*1.4,s*0.6,s*1.2,s*0.2); ctx.stroke();
+
+  // ── Skull ──
+  ctx.fillStyle = '#111111'; ctx.strokeStyle = '#1e1e1e'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.ellipse(0,-s*1.55,s*0.26,s*0.28,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+
+  // ── Horns (two curved lines) ──
+  ctx.fillStyle = '#0f0f0f';
+  ctx.beginPath(); ctx.moveTo(-s*0.2,-s*1.55); ctx.lineTo(-s*0.08,-s*1.95); ctx.lineTo(s*0.08,-s*1.95); ctx.lineTo(s*0.2,-s*1.55); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#cc2200'; ctx.shadowColor = '#ff3300'; ctx.shadowBlur = 5;
+  ctx.beginPath(); ctx.arc(-s*0.06,-s*1.88,s*0.04,0,Math.PI*2); ctx.fill(); // left horn tip
+  ctx.beginPath(); ctx.arc( s*0.06,-s*1.88,s*0.04,0,Math.PI*2); ctx.fill(); // right horn tip
+  ctx.shadowBlur = 0;
+  // Curved horn lines
+  ctx.strokeStyle = '#1e1e1e'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-s*0.12,-s*1.78); ctx.bezierCurveTo(-s*0.35,-s*2.1,-s*0.5,-s*2.3,-s*0.28,-s*2.6); ctx.stroke();
+  ctx.lineWidth = 2; ctx.strokeStyle = '#2d2d2d';
+  ctx.beginPath(); ctx.moveTo(-s*0.12,-s*1.78); ctx.bezierCurveTo(-s*0.35,-s*2.1,-s*0.5,-s*2.3,-s*0.28,-s*2.6); ctx.stroke();
+  ctx.lineWidth = 4; ctx.strokeStyle = '#1e1e1e';
+  ctx.beginPath(); ctx.moveTo( s*0.12,-s*1.78); ctx.bezierCurveTo( s*0.35,-s*2.1, s*0.5,-s*2.3, s*0.28,-s*2.6); ctx.stroke();
+  ctx.lineWidth = 2; ctx.strokeStyle = '#2d2d2d';
+  ctx.beginPath(); ctx.moveTo( s*0.12,-s*1.78); ctx.bezierCurveTo( s*0.35,-s*2.1, s*0.5,-s*2.3, s*0.28,-s*2.6); ctx.stroke();
+
+  // ── Eyes (dark sockets with pale glints) ──
+  ctx.fillStyle = '#050505';
+  ctx.beginPath(); ctx.ellipse(-s*0.12,-s*1.6,s*0.10,s*0.08,-0.2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( s*0.12,-s*1.6,s*0.10,s*0.08, 0.2,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#c8d8e8'; ctx.shadowColor = '#aaccdd'; ctx.shadowBlur = 4;
+  ctx.beginPath(); ctx.ellipse(-s*0.235,-s*1.575,s*0.025,s*0.04, 0.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( s*0.235,-s*1.575,s*0.025,s*0.04,-0.3,0,Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // ── Dorsal spine spikes (small triangles down the neck) ──
+  ctx.fillStyle = '#181818';
+  for (let i=0; i<5; i++) {
+    const sy = -s*1.3 + i*s*0.22;
+    ctx.beginPath(); ctx.moveTo(-s*0.06,sy); ctx.lineTo(0,sy-s*0.1+i*s*0.01); ctx.lineTo(s*0.06,sy); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── Rank badge (bottom-left corner during play) ───────────────────────────────
+// Shows the current rank title and a progress bar toward the next rank.
+// The bar fills as pizzaEaten increases (never affected by anchovy pizza).
+function drawRankBadge() {
+  const rank = RANKS[currentRankIdx];
+  const next = RANKS[currentRankIdx + 1];
+  ctx.save();
+  ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = rank.color; ctx.textAlign = 'left'; ctx.globalAlpha = 0.9;
+  ctx.fillText('✦ ' + rank.title, 8, H-68);
+
+  const pizzasIntoLevel = pizzaEaten - rank.at;
+  const pizzasNeeded    = next ? (next.at - rank.at) : PIZZAS_PER_LEVEL;
+  const progress        = next ? Math.min(pizzasIntoLevel / pizzasNeeded, 1) : 1;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(8, H-61, 100, 5);
+  ctx.fillStyle = rank.color; ctx.globalAlpha = 0.7; ctx.fillRect(8, H-61, 100*progress, 5);
+  ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.4; ctx.font = '10px sans-serif';
+  ctx.fillText(next ? '🍕 '+(pizzasNeeded-pizzasIntoLevel)+' to go' : 'MAX RANK', 8, H-51);
+  ctx.restore();
+}
+
+// ── Level-up banner (slides in from the bottom-left on rank up) ──────────────
+function drawLevelUpBanner() {
+  if (!levelUpBanner) return;
+  const prog  = levelUpBanner.timer / 2.5;
+  // Alpha: fade in for first 12%, hold, fade out for last 25%
+  const alpha = prog < 0.12 ? prog/0.12 : prog > 0.75 ? (1-(prog-0.75)/0.25) : 1;
+  // Slide in from the left edge
+  const slideX = prog < 0.14 ? (prog/0.14 - 1) * 190 : 0;
+
+  ctx.save(); ctx.globalAlpha = Math.max(0, alpha); ctx.translate(8 + slideX, H-120);
+  ctx.fillStyle = 'rgba(0,0,0,0.78)'; ctx.beginPath(); ctx.roundRect(0,0,175,50,8); ctx.fill();
+  ctx.strokeStyle = levelUpBanner.color; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(0,0,175,50,8); ctx.stroke();
+  ctx.shadowColor = levelUpBanner.color; ctx.shadowBlur = 12; ctx.beginPath(); ctx.roundRect(1,1,173,48,7); ctx.stroke(); ctx.shadowBlur = 0;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffdd88'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('RANK UP! 🍕', 10, 17);
+  ctx.fillStyle = levelUpBanner.color; ctx.font = 'bold 19px sans-serif'; ctx.fillText(levelUpBanner.title, 10, 37);
+  ctx.restore();
+}
+
+// ── Touch drag indicator (dashed line from dragon to finger) ─────────────────
+function drawTouchIndicator() {
+  if (!touchActive || screen !== 'playing') return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(dragon.x, dragon.y); ctx.lineTo(touchTargetX, touchTargetY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.beginPath(); ctx.arc(touchTargetX, touchTargetY, 8, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+// ── Title screen ──────────────────────────────────────────────────────────────
+// Draws the story, controls, player-count buttons, name-entry box, and Begin/Scores buttons.
+// The HTML <input> name boxes are positioned over this area by buildNameInputs().
+function drawTitleScreen() {
+  // Dark overlay so Darkstalker in the background is visible but dimmed
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,H);
+
+  // Title
+  ctx.textAlign = 'center'; ctx.shadowColor = '#ff4400'; ctx.shadowBlur = 24;
+  ctx.fillStyle = '#ff6622'; ctx.font = 'bold 48px serif'; ctx.fillText('DRAGON DASH', W/2, 56);
+  ctx.shadowBlur = 0; ctx.fillStyle = '#cc88ff'; ctx.font = 'bold 16px serif'; ctx.fillText('— Darkstalker —', W/2, 76);
+
+  // Backstory box
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.roundRect(28,84,W-56,96,8); ctx.fill();
+  ctx.strokeStyle = 'rgba(200,120,50,0.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(28,84,W-56,96,8); ctx.stroke();
+  const story = [
+    'Long ago, when the world was young and dragons ruled the sky...',
+    'DARKSTALKER was the most powerful dragon who ever lived —',
+    'gifted with animus magic, prophecy, and the hunger of ages.',
+    'Banished beneath the mountains for two thousand years,',
+    'he has awakened. And he is very, very hungry.',
+    '', 'Fly through the volcanic caverns. Eat the pizzas. Survive.',
+  ];
+  story.forEach((line, i) => {
+    ctx.fillStyle = (i===1||i===4||i===6) ? '#ffcc66' : '#ddccaa';
+    ctx.font = (i===6) ? 'bold italic 11px serif' : 'italic 11px serif';
+    ctx.fillText(line, W/2, 101 + i*13);
+  });
+
+  // Controls box
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.roundRect(28,186,W-56,48,8); ctx.fill();
+  ctx.fillStyle = '#aaa'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('CONTROLS', W/2, 200);
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = '#ccc';    ctx.fillText('📱 Drag to fly   ⌨️ Arrow keys / WASD', W/2, 214);
+  ctx.fillStyle = '#ffdd88'; ctx.fillText('🍕 Eat pizzas to level up!', W/2, 227);
+  ctx.fillStyle = '#ff7777'; ctx.fillText('🐟 Avoid anchovy pizza (−2 pts!)   🌋 Avoid the lava!', W/2, 240);
+
+  // Player count selector (1–4 buttons)
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.roundRect(28,240,W-56,44,8); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.fillText('NUMBER OF PLAYERS', W/2, 256);
+  const btnW = 58, btnH = 24, gap = 12;
+  const totalW = 4*btnW + 3*gap;
+  const startX = (W - totalW) / 2;
+  for (let i = 1; i <= 4; i++) {
+    const bx  = startX + (i-1)*(btnW+gap), by = 261;
+    const sel = (titlePlayerCount === i);
+    ctx.fillStyle   = sel ? PLAYER_COLORS[i-1] : 'rgba(50,20,5,0.8)';
+    ctx.strokeStyle = sel ? '#fff' : 'rgba(140,70,20,0.6)'; ctx.lineWidth = sel ? 2 : 1;
+    ctx.beginPath(); ctx.roundRect(bx,by,btnW,btnH,6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = sel ? '#000' : '#aaa'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(i, bx+btnW/2, by+17);
+  }
+
+  // Name-entry label box (actual <input> elements appear over this via HTML)
+  const nameBoxH = titlePlayerCount * 28 + 18;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.roundRect(28,292,W-56,nameBoxH,8); ctx.fill();
+  ctx.fillStyle = '#aaa'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('ENTER PLAYER NAMES', W/2, 306);
+
+  // ▶ BEGIN button (left) and 🏆 Scores button (right) — both at the bottom
+  const pulse = 0.88 + Math.sin(titlePulse) * 0.12;
+  ctx.save(); ctx.translate(W/2-84, H-18); ctx.scale(pulse, pulse);
+  ctx.fillStyle = 'rgba(160,55,0,0.92)'; ctx.beginPath(); ctx.roundRect(-68,-15,136,30,8); ctx.fill();
+  ctx.strokeStyle = '#ff8844'; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(-68,-15,136,30,8); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('▶  BEGIN', 0, 5);
+  ctx.restore();
+
+  ctx.save(); ctx.translate(W/2+84, H-18);
+  ctx.fillStyle = 'rgba(40,30,80,0.92)'; ctx.beginPath(); ctx.roundRect(-68,-15,136,30,8); ctx.fill();
+  ctx.strokeStyle = '#aa88ff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(-68,-15,136,30,8); ctx.stroke();
+  ctx.fillStyle = '#ddc8ff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('🏆  Scores', 0, 5);
+  ctx.restore();
+}
+
+// ── Turn-over screen ──────────────────────────────────────────────────────────
+// Shown after a player dies. Displays their score and the mini scoreboard,
+// with buttons to pass to the next player or end the game.
+function drawTurnOverScreen() {
+  ctx.fillStyle = 'rgba(0,0,0,0.84)'; ctx.fillRect(0,0,W,H);
+
+  const p    = currentPlayer;
+  const col  = PLAYER_COLORS[p];
+  const name = playerNames[p];
+  const rank = RANKS[currentRankIdx];
+  const entry = getEntry(name);
+
+  // Was this run a new personal best?
+  // Compare to all previous runs for this name (the current run is already recorded)
+  const prevBest = entry.history.length > 1
+    ? Math.max(...entry.history.slice(0, -1).map(r => r.score))
+    : 0;
+  const isNewBest = pizzaCount > prevBest && pizzaCount > 0;
+
+  ctx.textAlign = 'center'; ctx.shadowColor = col; ctx.shadowBlur = 18;
+  ctx.fillStyle = col; ctx.font = 'bold 28px serif'; ctx.fillText(name + "'s turn is over!", W/2, H/2-80);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ff5500'; ctx.font = 'bold 20px sans-serif';
+  ctx.fillText(deathReason === 'lava' ? 'MELTED! 🌋' : 'BURNED! 🔥', W/2, H/2-52);
+  ctx.fillStyle = rank.color; ctx.font = '15px sans-serif'; ctx.fillText('Rank: ' + rank.title, W/2, H/2-28);
+  ctx.fillStyle = '#ffdd88'; ctx.font = 'bold 24px sans-serif'; ctx.fillText('🍕 ' + pizzaCount + ' pizzas', W/2, H/2);
+  if (isNewBest) {
+    ctx.fillStyle = '#ffee44'; ctx.font = 'bold 13px sans-serif'; ctx.fillText('⭐ New personal best!', W/2, H/2+22);
+  }
+
+  // Mini scoreboard — all current players and their best runs so far
+  const sbY = H/2 + 40, sbH = numPlayers*22 + 16;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.roundRect(W/2-140,sbY,280,sbH,8); ctx.fill();
+  ctx.fillStyle = '#888'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('BEST RUNS SO FAR', W/2, sbY+14);
+  playerNames.slice(0, numPlayers).forEach((nm, i) => {
+    const best     = getBest(nm);
+    const isActive = (i === p);
+    ctx.fillStyle = PLAYER_COLORS[i]; ctx.font = (isActive?'bold ':'') + '12px sans-serif';
+    ctx.textAlign = 'left';  ctx.fillText((isActive?'▶ ':'') + nm, W/2-128, sbY+28+i*22);
+    ctx.textAlign = 'right'; ctx.fillStyle = best>0 ? '#ffdd88' : '#666';
+    ctx.fillText(best>0 ? '🍕 '+best : '—', W/2+128, sbY+28+i*22);
+  });
+
+  // Buttons
+  const nextP    = (p+1) % numPlayers;
+  const nextName = playerNames[nextP];
+  const btnY     = H - 46;
+  // End Game (left button)
+  ctx.fillStyle = 'rgba(80,20,0,0.85)'; ctx.beginPath(); ctx.roundRect(W/2-148,btnY,135,28,7); ctx.fill();
+  ctx.strokeStyle = '#884422'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(W/2-148,btnY,135,28,7); ctx.stroke();
+  ctx.fillStyle = '#cc8866'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('End Game', W/2-80, btnY+18);
+  // Pass to next player (right button)
+  const pulse2 = 0.93 + Math.sin(titlePulse*1.2) * 0.07;
+  ctx.save(); ctx.translate(W/2+80, btnY+14); ctx.scale(pulse2, pulse2);
+  ctx.fillStyle = PLAYER_COLORS[nextP]; ctx.beginPath(); ctx.roundRect(-70,-14,140,28,7); ctx.fill();
+  ctx.fillStyle = '#000'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Pass to ' + nextName + ' ▶', 0, 5); ctx.restore();
+}
+
+// ── Leaderboard ───────────────────────────────────────────────────────────────
+// Shows every player who has ever played (from the registry), sorted by best score.
+// Each player row shows their best score and top 3 individual runs.
+function drawLeaderboard() {
+  ctx.fillStyle = 'rgba(0,0,0,0.92)'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign = 'center'; ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 18;
+  ctx.fillStyle = '#ffdd55'; ctx.font = 'bold 26px serif'; ctx.fillText('🏆 FINAL SCORES 🏆', W/2, 34);
+  ctx.shadowBlur = 0;
+
+  // Sort all known players by their best score (highest first)
+  const names  = Object.keys(registry).sort((a,b) => registry[b].best - registry[a].best);
+  const medals = ['🥇','🥈','🥉','4th','5th','6th','7th','8th'];
+
+  let y = 46;
+  names.forEach((nm, place) => {
+    const entry = registry[nm];
+    const rank  = RANKS[entry.rankBest];
+    const col   = PLAYER_COLORS[place % PLAYER_COLORS.length]; // cycle colours
+
+    // Player summary row
+    ctx.fillStyle = place===0 ? 'rgba(255,200,0,0.10)' : 'rgba(255,255,255,0.04)';
+    ctx.beginPath(); ctx.roundRect(28,y,W-56,38,7); ctx.fill();
+    if (place===0) {
+      ctx.strokeStyle = 'rgba(255,200,0,0.35)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(28,y,W-56,38,7); ctx.stroke();
+    }
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ccc'; ctx.font = 'bold 14px sans-serif'; ctx.fillText(medals[place]||'', 36, y+24);
+    ctx.fillStyle = col;    ctx.font = 'bold 13px sans-serif'; ctx.fillText(nm, 58, y+16);
+    ctx.fillStyle = rank.color; ctx.font = '10px sans-serif';  ctx.fillText('Best rank: ' + rank.title, 58, y+30);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#ffdd88'; ctx.font = 'bold 18px sans-serif'; ctx.fillText('🍕 ' + entry.best, W-36, y+24);
+    y += 42;
+
+    // Top 3 runs for this player (sorted by score)
+    const topRuns = [...entry.history].sort((a,b) => b.score - a.score).slice(0,3);
+    topRuns.forEach((run, ri) => {
+      if (y > H - 50) return; // stop if we're running out of room
+      const runRank = RANKS[run.rank];
+      ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.beginPath(); ctx.roundRect(40,y,W-80,18,4); ctx.fill();
+      ctx.textAlign = 'left';  ctx.fillStyle = '#666';      ctx.font = '10px sans-serif'; ctx.fillText('#'+(ri+1), 48, y+13);
+      ctx.textAlign = 'center'; ctx.fillStyle = runRank.color; ctx.font = '10px sans-serif'; ctx.fillText(runRank.title, W/2, y+13);
+      ctx.textAlign = 'right'; ctx.fillStyle = run.score>0 ? '#aaa' : '#555'; ctx.fillText('🍕 '+run.score, W-44, y+13);
+      y += 20;
+    });
+    y += 6; // gap between players
+  });
+
+  if (names.length === 0) {
+    ctx.fillStyle = '#666'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('No games played yet!', W/2, H/2);
+  }
+
+  // Cloud sync status line
+  ctx.fillStyle = JSONBIN_API_KEY === 'YOUR_API_KEY_HERE' ? '#554433' : '#335533';
+  ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(
+    JSONBIN_API_KEY === 'YOUR_API_KEY_HERE' ? '☁ Cloud sync not configured' : '☁ Synced across devices',
+    W/2, H-36
+  );
+
+  // ← Title button (left) and ▶ Play Again button (right)
+  const pulse = 0.9 + Math.sin(titlePulse) * 0.1;
+  ctx.save(); ctx.translate(W/2-84, H-22);
+  ctx.fillStyle = 'rgba(30,20,50,0.9)'; ctx.beginPath(); ctx.roundRect(-60,-13,120,26,7); ctx.fill();
+  ctx.strokeStyle = '#aa88ff'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.roundRect(-60,-13,120,26,7); ctx.stroke();
+  ctx.fillStyle = '#ddc8ff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('← Title', 0, 4);
+  ctx.restore();
+  ctx.save(); ctx.translate(W/2+84, H-22); ctx.scale(pulse, pulse);
+  ctx.fillStyle = 'rgba(100,40,0,0.9)'; ctx.beginPath(); ctx.roundRect(-60,-13,120,26,8); ctx.fill();
+  ctx.strokeStyle = '#ff8844'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(-60,-13,120,26,8); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('▶  Play Again', 0, 4);
+  ctx.restore();
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 7 — INPUT HANDLING
+// Captures finger touches, mouse clicks, and keyboard presses.
+// Touch events are translated from screen pixels into game pixels using the
+// same scale factor as the canvas resize.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Convert a touch event's screen position into game canvas coordinates
+function getTouchPos(e) {
+  const rect   = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const touch  = e.touches[0];
+  return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
+}
+
+// Finger touches down — used for both UI taps and dragon drag control
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); resume();
+  const p = getTouchPos(e);
+  touchTargetX = p.x; touchTargetY = p.y; touchActive = true;
+  handleTap(p.x, p.y); // check if they tapped a button
+}, { passive: false });
+
+// Finger moves — update where the dragon should fly toward
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (screen === 'playing') {
+    const p = getTouchPos(e);
+    touchTargetX = p.x; touchTargetY = p.y;
+  }
+}, { passive: false });
+
+// Finger lifts — stop drag movement
+canvas.addEventListener('touchend', e => { e.preventDefault(); touchActive = false; }, { passive: false });
+
+// Mouse clicks (desktop/laptop) — same tap handling as touch
+canvas.addEventListener('click', e => {
+  const rect   = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width, scaleY = H / rect.height;
+  handleTap((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
+});
+
+// Keyboard — WASD and arrow keys for movement, Space to advance screens
+document.addEventListener('keydown', e => {
+  if (!keys[e.key]) { keys[e.key] = true; resume(); }
+  if (screen === 'title'       && e.key === ' ')                       tryBegin();
+  if (screen === 'turnover'    && (e.key === ' ' || e.key === 'Enter')) nextTurn();
+  if (screen === 'leaderboard' && (e.key === ' ' || e.key === 'Enter')) goToTitle();
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// Handle taps on buttons — called from both touch and click handlers above
+function handleTap(tx, ty) {
+  if (screen === 'title') {
+    // Check the 1/2/3/4 player count buttons
+    const btnW   = 58, btnH = 24, gap = 12;
+    const startX = (W - (4*btnW + 3*gap)) / 2;
+    for (let i = 1; i <= 4; i++) {
+      const bx = startX + (i-1)*(btnW+gap);
+      if (tx >= bx && tx <= bx+btnW && ty >= 261 && ty <= 261+btnH) {
+        titlePlayerCount = i;
+        playerNames = DEFAULT_NAMES.slice(); // reset names when changing player count
+        buildNameInputs(i);
+        return;
+      }
+    }
+    if (ty > H-34 && tx <  W/2) tryBegin();                             // ▶ BEGIN (left)
+    if (ty > H-34 && tx >= W/2) { screen='leaderboard'; hideNameInputs(); } // 🏆 Scores (right)
+
+  } else if (screen === 'turnover') {
+    const btnY = H - 46;
+    if (tx >= W/2-148 && tx <= W/2-13  && ty >= btnY && ty <= H-18) { showLeaderboard(); return; } // End Game
+    if (tx >= W/2+10  && tx <= W/2+148 && ty >= btnY && ty <= H-18) { nextTurn(); return; }         // Pass →
+
+  } else if (screen === 'leaderboard') {
+    if (ty > H-36 && tx <  W/2) goToTitle();           // ← Title
+    if (ty > H-36 && tx >= W/2) { hideNameInputs(); startGame(); } // ▶ Play Again
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 8 — PLAYER NAME INPUTS (HTML OVERLAY)
+// We use real HTML <input> elements so the iPad keyboard pops up automatically.
+// These are positioned over the canvas by CSS and JavaScript, not drawn on the canvas.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Build the name input boxes for n players and show them on screen
+function buildNameInputs(n) {
+  nameInputsEl.innerHTML = ''; // clear any previous inputs
+  nameInputRefs = [];
+
+  for (let i = 0; i < n; i++) {
+    const inp = document.createElement('input');
+    inp.type        = 'text';
+    inp.maxLength   = 12;
+    inp.placeholder = 'Player ' + (i+1) + ' name';
+    inp.style.borderColor = PLAYER_COLORS[i]; // each input coloured for that player
+
+    // Pre-fill if the player has a name from a previous round
+    inp.value = (playerNames[i] && playerNames[i] !== DEFAULT_NAMES[i]) ? playerNames[i] : '';
+
+    // Update the playerNames array as they type
+    inp.addEventListener('input', () => { playerNames[i] = inp.value.trim() || DEFAULT_NAMES[i]; });
+    // Press Enter to start the game directly from the keyboard
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { inp.blur(); tryBegin(); } });
+
+    nameInputsEl.appendChild(inp);
+    nameInputRefs.push(inp);
+  }
+
+  nameInputsEl.style.display = 'flex';
+  resize(); // re-position the inputs over the canvas
+}
+
+function hideNameInputs() { nameInputsEl.style.display = 'none'; }
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 9 — GAME FLOW
+// These functions control what happens at each stage: starting a game,
+// beginning a player's turn, handling their death, and moving to the next player.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Called when Begin is tapped — flush the name inputs and start the game
+function tryBegin() {
+  nameInputRefs.forEach((inp, i) => { playerNames[i] = inp.value.trim() || DEFAULT_NAMES[i]; });
+  startGame();
+}
+
+// Start a new game session with the chosen number of players
+function startGame() {
+  numPlayers    = titlePlayerCount;
+  currentPlayer = 0;
+  hideNameInputs();
+  startMusic();
+  beginPlayerTurn();
+  // Note: the registry (scores) is NOT reset here — bests persist across sessions
+}
+
+// Reset the game world and start this player's turn
+function beginPlayerTurn() {
+  screen        = 'playing';
+  gameOver      = false;
+  score         = 0;
+  deathReason   = '';
+  pizzaCount    = 0;
+  pizzaEaten    = 0;       // good pizza counter resets each turn
+  currentRankIdx = 0;      // start at Dragonet rank each turn
+  levelUpBanner = null;
+
+  // Put the dragon back in the middle of the screen
+  dragon.x = W/2; dragon.y = H/2;
+  touchTargetX = W/2; touchTargetY = H/2; touchActive = false;
+
+  // Fresh set of fireballs and empty pizza arrays
+  fireballs        = [spawnFireball(), spawnFireball()];
+  pizzas           = []; pizzaSpawnTimer   = 0;
+  anchovies        = []; anchovySpawnTimer = 3.5; // 3.5s head start before anchovies appear
+
+  // Start at cave level 0 (Dragonet dungeon) for each turn
+  cavePrev = 0; caveCurr = 0; caveBlend = 1;
+
+  t = 0; // reset the time clock
+
+  // Update the HUD to show this player's name and their previous best
+  const col  = PLAYER_COLORS[currentPlayer];
+  const name = playerNames[currentPlayer];
+  document.getElementById('hudPlayer').innerHTML =
+    '<span style="color:'+col+';font-weight:bold">'+name+'</span>: <strong id="score">0</strong>';
+  document.getElementById('pizzacount').textContent = '0';
+  document.getElementById('highscore').textContent  = getBest(name) || '—';
+}
+
+// Called when this player dies — record their run and show the turn-over screen
+function endPlayerTurn() {
+  recordRun(playerNames[currentPlayer], pizzaCount, currentRankIdx);
+  saveToCloud(); // upload the updated scores to JSONBin
+  screen = 'turnover';
+}
+
+// Move to the next player in the rotation (wraps back to player 1 after the last)
+function nextTurn() {
+  currentPlayer = (currentPlayer + 1) % numPlayers;
+  beginPlayerTurn();
+}
+
+// Show the full leaderboard (and stop the music)
+function showLeaderboard() {
+  screen = 'leaderboard';
+  stopMusic();
+}
+
+// Return to the title screen (preserving names and scores)
+function goToTitle() {
+  screen = 'title';
+  buildNameInputs(titlePlayerCount); // rebuild inputs with whatever names are set
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 10 — COLLISION DETECTION
+// Instead of one circle for the whole dragon, we use three overlapping circles
+// that match the actual shape: torso, neck, and skull. This makes hitting feel
+// fair — a fireball brushing past a wing tip won't register as a hit.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Check if a fireball overlaps any part of Darkstalker's body
+function checkFireballCollision(fb) {
+  const s = dragon.size;
+  // Three hitbox circles: torso (biggest), neck, skull
+  const hitPoints = [
+    { x: dragon.x, y: dragon.y + s*0.15, r: s*0.34 }, // torso
+    { x: dragon.x, y: dragon.y - s*0.55, r: s*0.22 }, // neck
+    { x: dragon.x, y: dragon.y - s*1.55, r: s*0.26 }, // skull
+  ];
+  const fbRadius = fb.size * 0.60;
+  for (const p of hitPoints) {
+    const dx = p.x - fb.x, dy = p.y - fb.y;
+    if (Math.sqrt(dx*dx + dy*dy) < fbRadius + p.r) return true;
+  }
+  return false;
+}
+
+// Check if the dragon overlaps a pizza or anchovy pizza (same hit points, larger radius)
+function checkPizzaCollision(pz) {
+  const s = dragon.size, pzR = 14;
+  const hitPoints = [
+    { x: dragon.x, y: dragon.y + s*0.15 },
+    { x: dragon.x, y: dragon.y - s*0.55 },
+    { x: dragon.x, y: dragon.y - s*1.55 },
+  ];
+  for (const p of hitPoints) {
+    const dx = p.x - pz.x, dy = p.y - pz.y;
+    if (Math.sqrt(dx*dx + dy*dy) < pzR + s*0.32) return true;
+  }
+  return false;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 11 — UPDATE (GAME LOGIC)
+// This function runs every frame while a player is flying. It moves the dragon,
+// updates fireballs and pizzas, checks for collisions, and updates the score.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let moving = false; // true this frame if the dragon moved (used to trigger flap sounds)
+
+function update() {
+  if (screen !== 'playing' || gameOver) return;
+
+  // ── Move the dragon ──
+  // On touch: smoothly pull the dragon toward where the finger is
+  if (touchActive) {
+    const dx   = touchTargetX - dragon.x;
+    const dy   = touchTargetY - dragon.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist > 4) {
+      const speed = Math.min(dist, dragon.speed * 2); // catch up faster when far away
+      dragon.x += (dx/dist) * speed;
+      dragon.y += (dy/dist) * speed;
+      moving = true;
+    }
+  }
+  // On keyboard: move at a fixed speed in each direction
+  if (keys['ArrowLeft'] ||keys['a']||keys['A']) { dragon.x -= dragon.speed; moving = true; }
+  if (keys['ArrowRight']||keys['d']||keys['D']) { dragon.x += dragon.speed; moving = true; }
+  if (keys['ArrowUp']   ||keys['w']||keys['W']) { dragon.y -= dragon.speed; moving = true; }
+  if (keys['ArrowDown'] ||keys['s']||keys['S']) { dragon.y += dragon.speed; moving = true; }
+
+  // Keep the dragon inside the cave boundaries
+  dragon.x = Math.max(50, Math.min(W-50, dragon.x));
+  dragon.y = Math.max(40, Math.min(LAVA_TOP-14, dragon.y));
+
+  // Play wing flap sounds while moving (at most once per FLAP_INTERVAL seconds)
+  if (moving) { flapTimer -= 0.016; if (flapTimer <= 0) { playFlap(); flapTimer = FLAP_INTERVAL; } }
+  else        { flapTimer = 0; }
+  moving = false;
+
+  // ── Update score display ──
+  score = pizzaCount;
+  document.getElementById('score').textContent = score;
+  // Show the live best (either previous best or current run if it's higher)
+  const liveBest = Math.max(getBest(playerNames[currentPlayer]), pizzaCount);
+  document.getElementById('highscore').textContent = liveBest;
+
+  // ── Check for lava death ──
+  if (dragon.y >= LAVA_TOP - 14) {
+    gameOver = true; deathReason = 'lava';
+    playLavaDeath(); endPlayerTurn(); return;
+  }
+
+  // ── Advance level-up banner timer ──
+  if (levelUpBanner) {
+    levelUpBanner.timer += 0.016;
+    if (levelUpBanner.timer >= 2.5) levelUpBanner = null; // hide after 2.5 seconds
+  }
+
+  // ── Spawn and move fireballs ──
+  // Number of fireballs on screen scales with difficulty
+  const targetFireballs = Math.round(2 + getDifficulty() * 4);
+  while (fireballs.length < targetFireballs) fireballs.push(spawnFireball());
+
+  // Move each fireball and grow its trail; remove if it leaves the screen
+  fireballs = fireballs.filter(fb => {
+    fb.trail.push({ x: fb.x, y: fb.y });
+    if (fb.trail.length > 10) fb.trail.shift(); // keep only the last 10 trail positions
+    fb.x += fb.vx; fb.y += fb.vy;
+    const margin = fb.size + 20;
+    return fb.x > -margin && fb.x < W+margin && fb.y > -margin && fb.y < H+margin;
+  });
+  if (fireballs.length < 2) fireballs.push(spawnFireball()); // always have at least 2
+
+  // Check if any fireball hit the dragon
+  for (const fb of fireballs) {
+    if (checkFireballCollision(fb)) {
+      gameOver = true; deathReason = 'fireball';
+      playDeath(); endPlayerTurn(); break;
+    }
+  }
+
+  // ── Spawn and update good pizzas ──
+  pizzaSpawnTimer -= 0.016;
+  if (pizzaSpawnTimer <= 0) {
+    pizzas.push(spawnPizza());
+    pizzaSpawnTimer = PIZZA_SPAWN_INTERVAL * (0.75 + Math.random() * 0.5); // random interval ±25%
+  }
+  pizzas = pizzas.filter(pz => {
+    if (pz.popping) { pz.popTimer += 0.016; return pz.popTimer < 0.3; } // remove after pop animation
+    pz.life -= 0.016; if (pz.life <= 0) return false;                   // remove when lifetime expires
+
+    if (checkPizzaCollision(pz)) {
+      pz.popping = true; pz.popTimer = 0;
+      playEatPizza();
+      pizzaCount++; // visible score goes up
+      pizzaEaten++; // level progress counter goes up (never goes down)
+      document.getElementById('pizzacount').textContent = pizzaCount;
+
+      // Check if this pizza pushed us to the next rank
+      for (let i = currentRankIdx+1; i < RANKS.length; i++) {
+        if (pizzaEaten >= RANKS[i].at) {
+          currentRankIdx = i;
+          triggerCaveTransition(i); // change the cave background
+          levelUpBanner = { title: RANKS[i].title, color: RANKS[i].color, timer: 0 };
+          playLevelUp();
+        }
+      }
+    }
+    return true;
+  });
+
+  // ── Spawn and update anchovy pizzas ──
+  anchovySpawnTimer -= 0.016;
+  if (anchovySpawnTimer <= 0) {
+    anchovies.push(spawnAnchovy());
+    anchovySpawnTimer = PIZZA_SPAWN_INTERVAL * (1.2 + Math.random() * 0.8); // less frequent than good pizzas
+  }
+  anchovies = anchovies.filter(pz => {
+    if (pz.popping) { pz.popTimer += 0.016; return pz.popTimer < 0.3; }
+    pz.life -= 0.016; if (pz.life <= 0) return false;
+
+    if (checkPizzaCollision(pz)) {
+      pz.popping = true; pz.popTimer = 0;
+      playEatAnchovy();
+      pizzaCount = Math.max(0, pizzaCount - 2); // score drops by 2 (can't go below 0)
+      score = pizzaCount;
+      document.getElementById('pizzacount').textContent = pizzaCount;
+      document.getElementById('score').textContent      = score;
+      // Note: pizzaEaten and rank are NOT changed — anchovies can't de-level you
+    }
+    return true;
+  });
+
+  t += 0.016; // advance the time clock (used for animations throughout)
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 12 — CLOUD SYNC (JSONBin)
+// The player registry (all scores and run history) is saved to a free online
+// database called JSONBin. This lets scores persist across different devices.
+//
+// HOW TO SET IT UP:
+//   1. Go to jsonbin.io and create a free account
+//   2. Create an Access Key with Read, Update, and Create permissions
+//   3. Paste your API key as JSONBIN_API_KEY below (in place of 'YOUR_API_KEY_HERE')
+//   4. Open the game, play a round, then check the browser Console (F12)
+//      for a message like "JSONBin created! Your Bin ID is: abc123..."
+//   5. Paste that ID as JSONBIN_BIN_ID below
+//   6. Save the file — now all devices with the same file share one leaderboard!
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const JSONBIN_API_KEY = 'YOUR_API_KEY_HERE'; // ← paste your API key here
+const JSONBIN_BIN_ID  = 'YOUR_BIN_ID_HERE';  // ← paste your bin ID here
+
+// Load scores from the cloud when the game starts
+async function loadFromCloud() {
+  if (JSONBIN_API_KEY === 'YOUR_API_KEY_HERE') return; // skip if not configured
+  if (JSONBIN_BIN_ID  === 'YOUR_BIN_ID_HERE')  return; // skip if no bin yet
+
+  try {
+    const res  = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
+      headers: { 'X-Master-Key': JSONBIN_API_KEY }
+    });
+    if (!res.ok) return;
+
+    const data  = await res.json();
+    const saved = data.record;
+
+    if (saved && typeof saved === 'object') {
+      // Merge remote scores into local registry — keep whichever best is higher
+      Object.keys(saved).forEach(name => {
+        const remote = saved[name];
+        if (!registry[name]) {
+          registry[name] = remote; // new player — just copy them in
+        } else {
+          // Existing player — update best if remote is better
+          if (remote.best > registry[name].best) {
+            registry[name].best     = remote.best;
+            registry[name].rankBest = remote.rankBest;
+          }
+          // Merge run histories, deduplicating by score+rank
+          const seen = new Set(registry[name].history.map(r => r.score+':'+r.rank));
+          remote.history.forEach(r => {
+            if (!seen.has(r.score+':'+r.rank)) registry[name].history.push(r);
+          });
+        }
+      });
+    }
+  } catch(e) { console.warn('Cloud load failed:', e); }
+}
+
+// Save scores to the cloud after each turn
+async function saveToCloud() {
+  if (JSONBIN_API_KEY === 'YOUR_API_KEY_HERE') return;
+
+  try {
+    if (JSONBIN_BIN_ID === 'YOUR_BIN_ID_HERE') {
+      // First ever save — create a new bin and log its ID to the console
+      const res = await fetch('https://api.jsonbin.io/v3/b', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_API_KEY, 'X-Bin-Name': 'DragonDash' },
+        body: JSON.stringify(registry)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        console.log('✅ JSONBin created! Your Bin ID is:', data.metadata.id, '— paste this as JSONBIN_BIN_ID in the code.');
+      }
+    } else {
+      // Update the existing bin with the current registry
+      await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_API_KEY },
+        body: JSON.stringify(registry)
+      });
+    }
+  } catch(e) { console.warn('Cloud save failed:', e); }
+}
+
+// Load any previously saved scores as soon as the page opens
+loadFromCloud();
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 13 — MAIN LOOP
+// This is the heartbeat of the game. requestAnimationFrame() asks the browser to
+// call loop() right before it draws the next screen refresh (usually 60 times/second).
+// Each call to loop() draws one complete frame of the game.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Build the name input boxes for the title screen before anything else shows
+buildNameInputs(titlePlayerCount);
+
+function loop() {
+  titlePulse += 0.05; // drives the gentle pulse on title screen buttons
+
+  // 1. Draw the cave background (always visible behind everything else)
+  drawBackground();
+
+  // 2. Draw the current screen's content on top of the background
+  if (screen === 'title') {
+    drawDarkstalker(W/2, H/2 + 15); // Darkstalker flies in the background on the title
+    drawTitleScreen();
+
+  } else if (screen === 'playing') {
+    // Draw game objects (back to front — pizzas first, then fireballs, then dragon on top)
+    pizzas.forEach(drawPizza);
+    anchovies.forEach(drawAnchovy);
+    fireballs.forEach(drawFireball);
+
+    // Run one frame of game logic
+    update();
+
+    // Draw the dragon and HUD overlays
+    drawTouchIndicator();
+    drawDarkstalker(dragon.x, dragon.y);
+    drawRankBadge();
+    drawLevelUpBanner();
+
+    // If the player just died, show the turn-over screen on top of everything
+    if (gameOver) drawTurnOverScreen();
+
+  } else if (screen === 'turnover') {
+    drawDarkstalker(dragon.x, dragon.y); // dragon still visible in death pose
+    drawTurnOverScreen();
+
+  } else if (screen === 'leaderboard') {
+    drawLeaderboard();
+  }
+
+  // Ask the browser to call loop() again before the next screen refresh
+  requestAnimationFrame(loop);
+}
+
+loop(); // kick off the very first frame
+
+</script>
+</body>
+</html>
